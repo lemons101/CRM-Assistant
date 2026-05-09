@@ -1,10 +1,10 @@
 # 输入结构说明
 
-当前项目支持两层输入：
+当前项目支持两层输入。
 
 ## 1. 业务处理层输入
 
-这是 `process_transcript.ps1` 直接消费的输入：
+这是 `scripts/crm_assistant.py process-transcript` 直接消费的输入：
 
 - `transcript.txt`
 - `context.json`
@@ -18,17 +18,19 @@
 
 - `customer_id`
 - `customer_name`
+- `company_name`
 - `owner`
 - `industry`
 - `opportunity_id`
 - `current_stage`
 - `meeting_time`
 - `next_meeting_time`
+- `sales_region`
 - `channel`
 
 ## 2. 飞书原始输入层
 
-这是更接近真实接入飞书会议时的输入。推荐标准化为：
+这是更接近真实飞书会议入口的数据层，推荐标准化为：
 
 ### `feishu_meeting_raw.json`
 
@@ -81,24 +83,26 @@
 
 ### crm_binding
 
-这是项目内部的“业务绑定补充层”，用于把飞书会议和 CRM 里的客户/商机关联起来。建议字段：
+这是项目内部的“业务绑定补充层”，用于把飞书会议和 CRM 中的客户/商机关联起来。建议字段：
 
 - `customer_id`
 - `customer_name`
+- `company_name`
 - `owner`
 - `industry`
 - `opportunity_id`
 - `current_stage`
+- `sales_region`
 
 ## 输入转换关系
 
-项目中通过 `scripts/build_context_from_feishu.ps1` 完成以下转换：
+项目中通过 `scripts/crm_assistant.py build-context-from-feishu` 完成以下转换：
 
 ```text
 feishu_meeting_raw.json
   -> transcript.txt
   -> context.json
-  -> process_transcript.ps1
+  -> process-transcript
 ```
 
 这一步的意义是：

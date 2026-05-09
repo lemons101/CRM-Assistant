@@ -7,8 +7,8 @@ description: 将已经完成转录的会议文本转换成适用于私域销售�
 
 在语音转文字已经完成之后使用本 Skill。输入一份 transcript 和一份小型 context JSON，将其转换成结构化 CRM 动作结果。
 
-> 当前推荐优先使用 Python CLI：`scripts/crm_assistant.py`  
-> 原有 PowerShell `.ps1` 脚本仍保留，但更适合 Windows 本地环境。
+> 当前项目已经统一为 Python CLI：`scripts/crm_assistant.py`  
+> 所有核心流程都通过这一个脚本的子命令完成。
 
 ## 快速开始
 
@@ -167,9 +167,6 @@ python ./scripts/crm_assistant.py run-customer-journey \
     - `run-feishu-pipeline-tests`
     - `run-model-output-tests`
     - `run-customer-journey`
-- `scripts/*.ps1`
-  - 保留的 PowerShell 版本
-  - 便于 Windows 本地环境兼容使用
 
 ## 参考资料
 

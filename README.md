@@ -3,8 +3,8 @@
 一个面向**私域销售 / 高净值线索跟进**场景的会议理解 Skill。  
 它的目标是：把会议转录文本或飞书会议原始数据，转换成可落到 CRM / 飞书多维表格中的结构化结果。
 
-> 当前项目已补齐 **Python 版本 CLI**，适合没有 `pwsh / powershell` 的 Linux / 云服务器环境。  
-> 原有 `.ps1` 脚本仍保留，但现在推荐优先使用 `scripts/crm_assistant.py`。
+> 当前项目已经收敛为 **纯 Python CLI**，适合没有 `pwsh / powershell` 的 Linux / 云服务器环境。  
+> 所有核心流程统一通过 `scripts/crm_assistant.py` 执行。
 
 ---
 
@@ -188,15 +188,7 @@ crm-assistant/
 │  └─ user_side_feishu_prompt.md
 ├─ runtime/              # 运行产物 / 测试输出
 ├─ scripts/
-│  ├─ process_transcript.ps1
-│  ├─ build_context_from_feishu.ps1
-│  ├─ build_llm_prompt.ps1
-│  ├─ validate_model_output.ps1
-│  ├─ convert_model_output_to_crm.ps1
-│  ├─ run_sample_tests.ps1
-│  ├─ run_feishu_pipeline_tests.ps1
-│  ├─ run_model_output_tests.ps1
-│  └─ run_customer_journey.ps1
+│  └─ crm_assistant.py
 ├─ README.md
 └─ SKILL.md
 ```
@@ -349,7 +341,6 @@ python ./scripts/crm_assistant.py run-customer-journey \
 - `assets/`
 - `references/`
 - `scripts/`
-- `scripts/crm_assistant.py`
 - `SKILL.md`
 - `README.md`
 
