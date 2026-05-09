@@ -1,0 +1,13 @@
+{
+  "customer_id": "C-002",
+  "customer_name": "陈思敏",
+  "company_name": "陈氏家族办公室",
+  "owner": "Jason",
+  "industry": "家族办公室",
+  "sales_region": null,
+  "opportunity_id": "O-002",
+  "current_stage": "需求确认",
+  "meeting_time": "2026-05-08T16:30:00+08:00",
+  "next_meeting_time": "2026-05-14T15:00:00+08:00",
+  "channel": "手动导入会议纪要"
+}

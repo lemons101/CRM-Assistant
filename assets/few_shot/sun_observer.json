@@ -1,0 +1,109 @@
+{
+  "name": "sun_observer",
+  "task_hint": "低意向调研型客户，适合轻量培育，不宜过度推进",
+  "input": {
+    "context": {
+      "customer_id": "C-004",
+      "customer_name": "孙宁",
+      "owner": "Ganson",
+      "industry": "咨询服务",
+      "opportunity_id": "O-004",
+      "current_stage": "初次接触",
+      "meeting_time": "2026-05-07T11:00:00+08:00",
+      "next_meeting_time": null,
+      "channel": "飞书会议纪要导入"
+    },
+    "transcript": "客户：我们现在更多是先了解一下。你们这个方向我觉得有意思，但今年不会马上上系统，内部优先级还没排到这里。\n客户：先看案例和大致思路就行，尤其想知道别人是怎么落地的，但预算要等明年再定。\n客户：团队也没有专门的人推进这个事，所以你先别安排太重的流程。\n客户：如果方便，可以先发邮件给我一个简版介绍，我内部慢慢看，别太长。\n客户：后面有机会再聊，但短期内不用频繁跟进。"
+  },
+  "output": {
+    "meeting": {
+      "meeting_id": "MTG-C-004-202605071100",
+      "customer_id": "C-004",
+      "customer_name": "孙宁",
+      "meeting_time": "2026-05-07T11:00:00+08:00",
+      "summary": "客户当前处于调研观察阶段，今年不会立刻上系统，希望先看案例和简版介绍，不接受高频推进。",
+      "discussion_points": [
+        "当前只是了解阶段",
+        "内部优先级不高",
+        "预算要等明年",
+        "希望先看简版案例材料"
+      ],
+      "customer_needs": [
+        "案例参考",
+        "简版介绍"
+      ],
+      "customer_concerns": [
+        "不希望流程太重",
+        "短期不想高频跟进"
+      ],
+      "next_actions": [
+        "发送简版介绍邮件",
+        "保持轻量联系节奏"
+      ],
+      "commitments": []
+    },
+    "customer_profile_update": {
+      "customer_id": "C-004",
+      "family_status": [],
+      "family_notes": [],
+      "business_preferences": [
+        "品牌与可靠性交付"
+      ],
+      "risk_concerns": [
+        "价格敏感"
+      ],
+      "communication_style": [
+        "偏好邮件接收",
+        "偏好简洁表达",
+        "偏好先看材料"
+      ],
+      "decision_signals": [
+        "明确预算"
+      ],
+      "recent_interest_points": [
+        "关注行业案例"
+      ],
+      "profile_summary": "客户处于观察调研状态，当前只接受轻量材料输入，不适合强推进。"
+    },
+    "opportunity_update": {
+      "opportunity_id": "O-004",
+      "lead_score": 34,
+      "intent_level": "low",
+      "opportunity_stage": "初次接触",
+      "high_value_flag": false,
+      "recommended_action": "发送简版介绍并维持低频培育，不主动推动重流程。",
+      "next_follow_up_at": null,
+      "latest_progress": "客户认可方向但短期不会立项，建议保留低频触达。"
+    },
+    "follow_up_task": {
+      "task_title": "跟进 孙宁 - 初次接触",
+      "owner": "Ganson",
+      "due_at": null,
+      "channel": "邮件",
+      "draft_message": "孙总您好，我先发您一版简版介绍和案例参考，方便您内部慢慢了解；这边先不高频打扰，后续有需要您随时叫我。",
+      "checklist": [
+        "发送简版介绍",
+        "发送案例参考",
+        "维持低频触达"
+      ]
+    },
+    "pre_meeting_brief": {
+      "next_meeting_at": null,
+      "trigger_at": null,
+      "headline": "孙宁 会前行动简报",
+      "opening_script": null,
+      "key_points": [
+        "客户仍在调研阶段",
+        "预算要等明年",
+        "不希望高频推进"
+      ],
+      "watchouts": [
+        "不要过早推进报价或重实施讨论"
+      ],
+      "materials_to_prepare": [
+        "简版介绍",
+        "行业案例"
+      ]
+    }
+  }
+}

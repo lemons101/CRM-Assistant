@@ -1,0 +1,25 @@
+{
+  "intent_level": "high",
+  "min_lead_score": 80,
+  "opportunity_stage": "方案沟通",
+  "high_value_flag": true,
+  "required_channel": "微信",
+  "required_tags": [
+    "已婚/伴侣参与",
+    "有子女",
+    "子女教育/留学规划",
+    "品牌与可靠性交付",
+    "小步试点",
+    "偏好微信触达",
+    "偏好简洁表达",
+    "企业多角色决策",
+    "明确预算",
+    "进入报价讨论"
+  ],
+  "summary_must_include": [
+    "张天成",
+    "报价",
+    "顾虑"
+  ],
+  "pre_meeting_should_exist": true
+}

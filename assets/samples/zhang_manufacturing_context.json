@@ -1,0 +1,13 @@
+{
+  "customer_id": "C-001",
+  "customer_name": "张天成",
+  "company_name": "华东智造集团",
+  "owner": "王小Y",
+  "industry": "制造业",
+  "sales_region": "华东地区",
+  "opportunity_id": "O-001",
+  "current_stage": "初次接触",
+  "meeting_time": "2026-05-08T14:00:00+08:00",
+  "next_meeting_time": "2026-05-15T10:00:00+08:00",
+  "channel": "飞书会议纪要导入"
+}

@@ -1,0 +1,23 @@
+{
+  "intent_level": "high",
+  "min_lead_score": 95,
+  "opportunity_stage": "待成交",
+  "high_value_flag": true,
+  "required_channel": "邮件",
+  "required_tags": [
+    "价格敏感",
+    "时间窗口紧张",
+    "交付风险",
+    "偏好邮件接收",
+    "偏好先看材料",
+    "企业多角色决策",
+    "明确预算",
+    "期待产品演示"
+  ],
+  "summary_must_include": [
+    "刘子航",
+    "合同",
+    "定稿"
+  ],
+  "pre_meeting_should_exist": true
+}

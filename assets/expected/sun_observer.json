@@ -1,0 +1,17 @@
+{
+  "intent_level": "low",
+  "min_lead_score": 20,
+  "opportunity_stage": "初次接触",
+  "high_value_flag": false,
+  "required_channel": "邮件",
+  "required_tags": [
+    "偏好邮件接收",
+    "偏好先看材料"
+  ],
+  "summary_must_include": [
+    "孙宁",
+    "先了解",
+    "发邮件"
+  ],
+  "pre_meeting_should_exist": false
+}

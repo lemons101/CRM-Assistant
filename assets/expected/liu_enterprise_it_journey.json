@@ -1,0 +1,10 @@
+{
+  "customer_id": "C-003",
+  "customer_name": "刘子航",
+  "expected_stage_path": [
+    "方案沟通",
+    "推进中",
+    "待成交"
+  ],
+  "minimum_latest_score": 80
+}

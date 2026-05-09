@@ -1,0 +1,13 @@
+{
+  "customer_id": "C-003",
+  "customer_name": "刘子航",
+  "company_name": "高网信息科技",
+  "owner": "Mark",
+  "industry": "企业软件",
+  "sales_region": "华北地区",
+  "opportunity_id": "O-003",
+  "current_stage": "需求确认",
+  "meeting_time": "2026-05-05T14:00:00+08:00",
+  "next_meeting_time": "2026-05-09T11:00:00+08:00",
+  "channel": "飞书会议纪要导入"
+}

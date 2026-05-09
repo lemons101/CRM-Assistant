@@ -1,0 +1,227 @@
+﻿﻿---
+name: crm-assistant
+description: 将已经完成转录的会议文本转换成适用于私域销售跟进的 CRM 结构化结果。当 Codex 需要基于会议 transcript 和基础客户上下文，生成会议摘要、客户画像增量、商机判断、跟进任务、会前简报或飞书多维表格可写入 payload 时使用。
+---
+
+# CRM Assistant
+
+在语音转文字已经完成之后使用本 Skill。输入一份 transcript 和一份小型 context JSON，将其转换成结构化 CRM 动作结果。
+
+## 快速开始
+
+1. 准备：
+   - 一份 transcript `.txt` 文件
+   - 一份 context `.json` 文件，包含客户、负责人、会议时间、商机等基础信息
+2. 运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/process_transcript.ps1 `
+  -TranscriptPath ./assets/samples/zhang_manufacturing_transcript.txt `
+  -ContextPath ./assets/samples/zhang_manufacturing_context.json `
+  -OutputDir ./runtime/zhang_manufacturing
+```
+
+3. 查看输出目录中的结果文件：
+   - `crm_packet.json`
+   - `meeting_record.json`
+   - `customer_profile_update.json`
+   - `opportunity_update.json`
+   - `follow_up_task.json`
+   - `pre_meeting_brief.json`
+   - `customer_table_row.json`
+   - `opportunity_snapshot_row.json`
+
+## 飞书原始输入模式
+
+如果上游是飞书会议，而不是你手工准备好的 `transcript.txt + context.json`，先把飞书原始数据整理成 `feishu_meeting_raw.json`，再运行转换脚本。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/build_context_from_feishu.ps1 `
+  -RawInputPath ./assets/feishu_raw/liu_enterprise_it.json `
+  -OutputDir ./runtime/from_feishu/liu_enterprise_it
+```
+
+会生成：
+- `context.json`
+- `transcript.txt`
+- `build_result.json`
+
+然后再送入主处理脚本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/process_transcript.ps1 `
+  -TranscriptPath ./runtime/from_feishu/liu_enterprise_it/transcript.txt `
+  -ContextPath ./runtime/from_feishu/liu_enterprise_it/context.json `
+  -OutputDir ./runtime/from_feishu/liu_enterprise_it/process
+```
+
+## LLM 提示词模式
+
+如果你希望把“识别与判断”交给 OpenClaw 背后的大模型，而不是完全依赖当前规则脚本，可以先组装一份标准提示词包。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/build_llm_prompt.ps1 `
+  -TranscriptPath ./assets/samples/chen_familyoffice_transcript.txt `
+  -ContextPath ./assets/samples/chen_familyoffice_context.json `
+  -OutputDir ./runtime/llm_prompt/chen_familyoffice
+```
+
+会生成：
+- `system_prompt.txt`
+- `user_prompt.txt`
+- `prompt_package.json`
+
+这套提示词包包含：
+- 角色与任务定义
+- 商机阶段判断标准
+- 输出 schema
+- few-shot 示例
+- 当前待处理输入
+
+如果你已经拿到了大模型输出 JSON，可继续运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/validate_model_output.ps1 `
+  -ModelOutputPath ./runtime/llm_outputs/liu_enterprise_it/model_output.json
+
+powershell -ExecutionPolicy Bypass -File ./scripts/convert_model_output_to_crm.ps1 `
+  -ModelOutputPath ./runtime/llm_outputs/liu_enterprise_it/model_output.json `
+  -ContextPath ./assets/samples/liu_enterprise_it_context.json `
+  -OutputDir ./runtime/from_model/liu_enterprise_it
+```
+
+## 用户侧轻量 Prompt 模式
+
+如果你不想走额外 API 或脚本写入，而是希望直接从用户侧把内容喂给 OpenClaw，也可以使用项目内置的用户侧 Prompt：
+
+- `references/user_side_feishu_prompt.md`
+
+这个模式更适合：
+- 演示
+- 轻量人工协同
+- 直接输入飞书原始会议 JSON，让 OpenClaw 先提取 `context + transcript`
+- 再让 OpenClaw 产出两张飞书表记录，再决定是否手动贴入飞书
+- 当前 OpenClaw 已具备飞书操作能力时，直接尝试写入
+
+## 同一客户多轮推进
+
+当同一客户跨多轮会议持续推进、你想查看其阶段变化和得分变化时，使用内置的 journey 样本。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/run_customer_journey.ps1 `
+  -ManifestPath ./assets/samples/liu_enterprise_it_journey_manifest.json `
+  -OutputDir ./runtime/liu_enterprise_it_journey
+```
+
+会生成：
+- 每一轮一个独立子目录
+- `journey_summary.json`
+
+可用于查看：
+- 同一客户如何从一个阶段推进到下一个阶段
+- Lead Score 如何随轮次变化
+- 每一轮推荐的下一步动作是什么
+- 每一轮会新增哪一条飞书快照记录
+
+## 项目逻辑
+
+### 输入
+1. 主输入：`transcript.txt`
+2. 辅助输入：`context.json`
+3. 可选输入：`feishu_raw/*.json`
+4. 可选输入：LLM 的结构化 `model_output.json`
+
+### 中间处理
+1. 从 transcript 中抽取需求、顾虑、决策信号、沟通风格、预算/区域/时间信息
+2. 结合 context 补齐客户、负责人、商机、会议时间等基础字段
+3. 生成五类核心业务对象：
+   - 会议记录
+   - 客户画像增量
+   - 商机更新
+   - 跟进任务
+   - 会前简报
+4. 映射成飞书两张表可写入的结构：
+   - 客户信息表：按客户 ID 做 upsert
+   - 商机推进快照表：每次会议 append 一行
+
+### 输出
+- 标准 CRM JSON 文件
+- 飞书客户信息表单行对象
+- 飞书商机推进快照单行对象
+- `feishu_bitable_payload` 两表写入载荷
+
+## 脚本
+
+- `scripts/process_transcript.ps1`
+  - 主处理脚本
+  - 将单份 transcript 和 context 转成 CRM JSON 输出
+- `scripts/build_context_from_feishu.ps1`
+  - 将飞书会议原始输入转成项目内部可消费的 `context.json + transcript.txt`
+- `scripts/build_llm_prompt.ps1`
+  - 组装适合大模型调用的提示词包，包含 prompt、schema 和 few-shot 示例
+- `scripts/validate_model_output.ps1`
+  - 校验大模型输出 JSON 是否符合当前 Skill 约定的结构与枚举
+- `scripts/convert_model_output_to_crm.ps1`
+  - 将大模型输出 JSON 转成项目内部 CRM 结果与飞书两表 payload
+- `scripts/run_sample_tests.ps1`
+  - 运行所有内置规则样本
+- `scripts/run_feishu_pipeline_tests.ps1`
+  - 校验“飞书原始输入 -> context/transcript -> CRM 输出”的完整链路
+- `scripts/run_model_output_tests.ps1`
+  - 校验“LLM 输出 -> 校验 -> CRM/飞书两表映射”的完整链路
+- `scripts/run_customer_journey.ps1`
+  - 处理同一客户的多轮会议，并生成推进时间线
+
+## 参考资料
+
+按需读取：
+- `references/input_schemas.md`
+- `references/output_schemas.md`
+- `references/feishu-bitable-mapping.md`
+- `references/llm_prompt_template.md`
+- `references/llm_output_schema.md`
+
+## 样本资源
+
+使用 `assets/samples/` 中的内置样本可快速测试或演示本 Skill。每组样本包含：
+- `*_transcript.txt`
+- `*_context.json`
+- `assets/expected/` 中对应的一份断言文件
+
+运行全部规则样本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/run_sample_tests.ps1
+```
+
+运行全部飞书链路样本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/run_feishu_pipeline_tests.ps1
+```
+
+运行全部模型输出样本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/run_model_output_tests.ps1
+```
+
+LLM few-shot 示例位于：
+- `assets/few_shot/chen_familyoffice.json`
+- `assets/few_shot/liu_enterprise_it.json`
+- `assets/few_shot/sun_observer.json`
+
+## 输出规范
+
+优先保证：
+- 中文业务摘要简洁清晰
+- 下一步动作明确
+- 跟进草稿可直接给负责人使用
+- 字段名适合飞书多维表格
+- JSON 结构稳定可复用
+
+避免：
+- 原始 prompt 痕迹
+- 隐式推理过程外露
+- 过长且无结构的大段文本
+- 在没有明确证据时覆盖长期客户字段
