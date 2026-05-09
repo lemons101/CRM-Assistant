@@ -208,6 +208,12 @@ crm-assistant/
 conda run -n env1 python ./scripts/crm_assistant.py --help
 ```
 
+如果你在云服务器上走统一部署流程，也可以先执行：
+
+```bash
+pip install -r requirements.txt
+```
+
 ## 6.1 方式一：直接处理 transcript + context
 
 ```bash
