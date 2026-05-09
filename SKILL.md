@@ -7,6 +7,9 @@ description: 将已经完成转录的会议文本转换成适用于私域销售�
 
 在语音转文字已经完成之后使用本 Skill。输入一份 transcript 和一份小型 context JSON，将其转换成结构化 CRM 动作结果。
 
+> 当前推荐优先使用 Python CLI：`scripts/crm_assistant.py`  
+> 原有 PowerShell `.ps1` 脚本仍保留，但更适合 Windows 本地环境。
+
 ## 快速开始
 
 1. 准备：
@@ -14,11 +17,11 @@ description: 将已经完成转录的会议文本转换成适用于私域销售�
    - 一份 context `.json` 文件，包含客户、负责人、会议时间、商机等基础信息
 2. 运行：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/process_transcript.ps1 `
-  -TranscriptPath ./assets/samples/zhang_manufacturing_transcript.txt `
-  -ContextPath ./assets/samples/zhang_manufacturing_context.json `
-  -OutputDir ./runtime/zhang_manufacturing
+```bash
+python ./scripts/crm_assistant.py process-transcript \
+  --transcript-path ./assets/samples/zhang_manufacturing_transcript.txt \
+  --context-path ./assets/samples/zhang_manufacturing_context.json \
+  --output-dir ./runtime/zhang_manufacturing
 ```
 
 3. 查看输出目录中的结果文件：
@@ -35,10 +38,10 @@ powershell -ExecutionPolicy Bypass -File ./scripts/process_transcript.ps1 `
 
 如果上游是飞书会议，而不是你手工准备好的 `transcript.txt + context.json`，先把飞书原始数据整理成 `feishu_meeting_raw.json`，再运行转换脚本。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/build_context_from_feishu.ps1 `
-  -RawInputPath ./assets/feishu_raw/liu_enterprise_it.json `
-  -OutputDir ./runtime/from_feishu/liu_enterprise_it
+```bash
+python ./scripts/crm_assistant.py build-context-from-feishu \
+  --raw-input-path ./assets/feishu_raw/liu_enterprise_it.json \
+  --output-dir ./runtime/from_feishu/liu_enterprise_it
 ```
 
 会生成：
@@ -48,22 +51,22 @@ powershell -ExecutionPolicy Bypass -File ./scripts/build_context_from_feishu.ps1
 
 然后再送入主处理脚本：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/process_transcript.ps1 `
-  -TranscriptPath ./runtime/from_feishu/liu_enterprise_it/transcript.txt `
-  -ContextPath ./runtime/from_feishu/liu_enterprise_it/context.json `
-  -OutputDir ./runtime/from_feishu/liu_enterprise_it/process
+```bash
+python ./scripts/crm_assistant.py process-transcript \
+  --transcript-path ./runtime/from_feishu/liu_enterprise_it/transcript.txt \
+  --context-path ./runtime/from_feishu/liu_enterprise_it/context.json \
+  --output-dir ./runtime/from_feishu/liu_enterprise_it/process
 ```
 
 ## LLM 提示词模式
 
 如果你希望把“识别与判断”交给 OpenClaw 背后的大模型，而不是完全依赖当前规则脚本，可以先组装一份标准提示词包。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/build_llm_prompt.ps1 `
-  -TranscriptPath ./assets/samples/chen_familyoffice_transcript.txt `
-  -ContextPath ./assets/samples/chen_familyoffice_context.json `
-  -OutputDir ./runtime/llm_prompt/chen_familyoffice
+```bash
+python ./scripts/crm_assistant.py build-llm-prompt \
+  --transcript-path ./assets/samples/chen_familyoffice_transcript.txt \
+  --context-path ./assets/samples/chen_familyoffice_context.json \
+  --output-dir ./runtime/llm_prompt/chen_familyoffice
 ```
 
 会生成：
@@ -80,14 +83,14 @@ powershell -ExecutionPolicy Bypass -File ./scripts/build_llm_prompt.ps1 `
 
 如果你已经拿到了大模型输出 JSON，可继续运行：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/validate_model_output.ps1 `
-  -ModelOutputPath ./runtime/llm_outputs/liu_enterprise_it/model_output.json
+```bash
+python ./scripts/crm_assistant.py validate-model-output \
+  --model-output-path ./runtime/llm_outputs/liu_enterprise_it/model_output.json
 
-powershell -ExecutionPolicy Bypass -File ./scripts/convert_model_output_to_crm.ps1 `
-  -ModelOutputPath ./runtime/llm_outputs/liu_enterprise_it/model_output.json `
-  -ContextPath ./assets/samples/liu_enterprise_it_context.json `
-  -OutputDir ./runtime/from_model/liu_enterprise_it
+python ./scripts/crm_assistant.py convert-model-output \
+  --model-output-path ./runtime/llm_outputs/liu_enterprise_it/model_output.json \
+  --context-path ./assets/samples/liu_enterprise_it_context.json \
+  --output-dir ./runtime/from_model/liu_enterprise_it
 ```
 
 ## 用户侧轻量 Prompt 模式
@@ -107,10 +110,10 @@ powershell -ExecutionPolicy Bypass -File ./scripts/convert_model_output_to_crm.p
 
 当同一客户跨多轮会议持续推进、你想查看其阶段变化和得分变化时，使用内置的 journey 样本。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/run_customer_journey.ps1 `
-  -ManifestPath ./assets/samples/liu_enterprise_it_journey_manifest.json `
-  -OutputDir ./runtime/liu_enterprise_it_journey
+```bash
+python ./scripts/crm_assistant.py run-customer-journey \
+  --manifest-path ./assets/samples/liu_enterprise_it_journey_manifest.json \
+  --output-dir ./runtime/liu_enterprise_it_journey
 ```
 
 会生成：
@@ -152,25 +155,21 @@ powershell -ExecutionPolicy Bypass -File ./scripts/run_customer_journey.ps1 `
 
 ## 脚本
 
-- `scripts/process_transcript.ps1`
-  - 主处理脚本
-  - 将单份 transcript 和 context 转成 CRM JSON 输出
-- `scripts/build_context_from_feishu.ps1`
-  - 将飞书会议原始输入转成项目内部可消费的 `context.json + transcript.txt`
-- `scripts/build_llm_prompt.ps1`
-  - 组装适合大模型调用的提示词包，包含 prompt、schema 和 few-shot 示例
-- `scripts/validate_model_output.ps1`
-  - 校验大模型输出 JSON 是否符合当前 Skill 约定的结构与枚举
-- `scripts/convert_model_output_to_crm.ps1`
-  - 将大模型输出 JSON 转成项目内部 CRM 结果与飞书两表 payload
-- `scripts/run_sample_tests.ps1`
-  - 运行所有内置规则样本
-- `scripts/run_feishu_pipeline_tests.ps1`
-  - 校验“飞书原始输入 -> context/transcript -> CRM 输出”的完整链路
-- `scripts/run_model_output_tests.ps1`
-  - 校验“LLM 输出 -> 校验 -> CRM/飞书两表映射”的完整链路
-- `scripts/run_customer_journey.ps1`
-  - 处理同一客户的多轮会议，并生成推进时间线
+- `scripts/crm_assistant.py`
+  - Python 主入口
+  - 通过子命令覆盖完整链路：
+    - `process-transcript`
+    - `build-context-from-feishu`
+    - `build-llm-prompt`
+    - `validate-model-output`
+    - `convert-model-output`
+    - `run-sample-tests`
+    - `run-feishu-pipeline-tests`
+    - `run-model-output-tests`
+    - `run-customer-journey`
+- `scripts/*.ps1`
+  - 保留的 PowerShell 版本
+  - 便于 Windows 本地环境兼容使用
 
 ## 参考资料
 
@@ -190,20 +189,20 @@ powershell -ExecutionPolicy Bypass -File ./scripts/run_customer_journey.ps1 `
 
 运行全部规则样本：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/run_sample_tests.ps1
+```bash
+python ./scripts/crm_assistant.py run-sample-tests
 ```
 
 运行全部飞书链路样本：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/run_feishu_pipeline_tests.ps1
+```bash
+python ./scripts/crm_assistant.py run-feishu-pipeline-tests
 ```
 
 运行全部模型输出样本：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/run_model_output_tests.ps1
+```bash
+python ./scripts/crm_assistant.py run-model-output-tests
 ```
 
 LLM few-shot 示例位于：
