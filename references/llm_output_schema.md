@@ -21,13 +21,12 @@
     "customer_id": null,
     "company_name": null,
     "industry": null,
-    "family_status": [],
-    "family_notes": [],
-    "business_preferences": [],
+    "mbti": null,
+    "single_status": "未明确",
+    "resistance_level": "未明确",
+    "price_sensitivity": "未明确",
     "risk_concerns": [],
     "communication_style": [],
-    "decision_signals": [],
-    "recent_interest_points": [],
     "profile_summary": null
   },
   "opportunity_update": {
@@ -79,6 +78,7 @@
 - `方案沟通`
 - `推进中`
 - `待成交`
+- `已成交`
 
 ### `channel`
 建议值：

@@ -22,11 +22,15 @@
 - `owner`
 - `industry`
 - `opportunity_id`
-- `current_stage`
 - `meeting_time`
 - `next_meeting_time`
 - `sales_region`
 - `channel`
+
+说明：
+
+- `current_stage` 不建议出现在原始输入层
+- 当前阶段应由会议文本分析后生成，而不是在源输入中提前给定
 
 ## 2. 飞书原始输入层
 
@@ -91,8 +95,13 @@
 - `owner`
 - `industry`
 - `opportunity_id`
-- `current_stage`
 - `sales_region`
+
+说明：
+
+- `crm_binding` 用于补充客户、公司、负责人、商机 ID 等“绑定信息”
+- 不建议在这里直接给 `current_stage`
+- 商机当前阶段应在后续处理环节中根据 transcript 推断
 
 ## 输入转换关系
 

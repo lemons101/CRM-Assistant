@@ -36,13 +36,12 @@
 - `customer_id`
 - `company_name`
 - `industry`
-- `family_status`
-- `family_notes`
-- `business_preferences`
+- `mbti`
+- `single_status`
+- `resistance_level`
+- `price_sensitivity`
 - `risk_concerns`
 - `communication_style`
-- `decision_signals`
-- `recent_interest_points`
 - `profile_summary`
 
 ## 4. `opportunity_update.json`
@@ -91,15 +90,14 @@
 - `客户名称`
 - `客户公司`
 - `行业`
-- `客户负责人`
-- `家庭标签`
-- `家庭备注`
-- `商业偏好`
-- `风险顾虑`
+- `MBTI`
+- `是否单身`
 - `沟通风格`
-- `决策信号`
-- `最近关注点`
+- `成交阻力`
+- `价格敏感程度`
+- `风险顾虑`
 - `客户画像摘要`
+- `客户负责人`
 - `最后更新时间`
 - `数据来源`
 
@@ -148,3 +146,5 @@
 - 商机推进快照表用于保留每次会议后的状态切片，原则上只新增，不覆盖历史。
 - `high_value_flag` 主要用于优先级判断，不代表正式客户分层标签。
 - `recommended_action` 应保持简短、明确、可执行。
+- `opportunity_stage` 当前支持 6 个值：`初次接触`、`需求确认`、`方案沟通`、`推进中`、`待成交`、`已成交`。
+- `已成交` 表示合同、金额、付款节点或成交结论已经锁定，后续重点从商务推进切换到启动与交付执行。

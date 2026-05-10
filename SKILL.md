@@ -1,11 +1,11 @@
 ﻿﻿---
 name: crm-assistant
-description: 将已经完成转录的会议文本转换成适用于私域销售跟进的 CRM 结构化结果。当 Codex 需要基于会议 transcript 和基础客户上下文，生成会议摘要、客户画像增量、商机判断、跟进任务、会前简报或飞书多维表格可写入 payload 时使用。
+description: 将已经完成转录的会议文本转换成适用于私域销售跟进的 CRM 结构化结果。当 Codex 需要基于会议 transcript 和基础客户上下文，生成会议摘要、客户画像增量、商机判断、跟进任务、会前简报，并最终整理成可写入现有飞书多维表格的结果时使用。
 ---
 
 # CRM Assistant
 
-在语音转文字已经完成之后使用本 Skill。输入一份 transcript 和一份小型 context JSON，将其转换成结构化 CRM 动作结果。
+在语音转文字已经完成之后使用本 Skill。输入一份 transcript 和一份小型 context JSON，将其转换成结构化 CRM 动作结果，并以“写入现有飞书客户信息表和商机推进快照表”为最终落地目标。
 
 > 当前项目已经统一为 Python CLI：`scripts/crm_assistant.py`  
 > 所有核心流程都通过这一个脚本的子命令完成。
@@ -19,9 +19,9 @@ description: 将已经完成转录的会议文本转换成适用于私域销售�
 
 ```bash
 python ./scripts/crm_assistant.py process-transcript \
-  --transcript-path ./assets/samples/zhang_manufacturing_transcript.txt \
-  --context-path ./assets/samples/zhang_manufacturing_context.json \
-  --output-dir ./runtime/zhang_manufacturing
+  --transcript-path ./assets/samples/your_transcript.txt \
+  --context-path ./assets/samples/your_context.json \
+  --output-dir ./runtime/your_case
 ```
 
 3. 查看输出目录中的结果文件：
@@ -40,8 +40,8 @@ python ./scripts/crm_assistant.py process-transcript \
 
 ```bash
 python ./scripts/crm_assistant.py build-context-from-feishu \
-  --raw-input-path ./assets/feishu_raw/liu_enterprise_it.json \
-  --output-dir ./runtime/from_feishu/liu_enterprise_it
+  --raw-input-path ./assets/feishu_raw/your_feishu_raw.json \
+  --output-dir ./runtime/from_feishu/your_case
 ```
 
 会生成：
@@ -53,9 +53,9 @@ python ./scripts/crm_assistant.py build-context-from-feishu \
 
 ```bash
 python ./scripts/crm_assistant.py process-transcript \
-  --transcript-path ./runtime/from_feishu/liu_enterprise_it/transcript.txt \
-  --context-path ./runtime/from_feishu/liu_enterprise_it/context.json \
-  --output-dir ./runtime/from_feishu/liu_enterprise_it/process
+  --transcript-path ./runtime/from_feishu/your_case/transcript.txt \
+  --context-path ./runtime/from_feishu/your_case/context.json \
+  --output-dir ./runtime/from_feishu/your_case/process
 ```
 
 ## LLM 提示词模式
@@ -64,9 +64,9 @@ python ./scripts/crm_assistant.py process-transcript \
 
 ```bash
 python ./scripts/crm_assistant.py build-llm-prompt \
-  --transcript-path ./assets/samples/chen_familyoffice_transcript.txt \
-  --context-path ./assets/samples/chen_familyoffice_context.json \
-  --output-dir ./runtime/llm_prompt/chen_familyoffice
+  --transcript-path ./assets/samples/your_transcript.txt \
+  --context-path ./assets/samples/your_context.json \
+  --output-dir ./runtime/llm_prompt/your_case
 ```
 
 会生成：
@@ -85,12 +85,12 @@ python ./scripts/crm_assistant.py build-llm-prompt \
 
 ```bash
 python ./scripts/crm_assistant.py validate-model-output \
-  --model-output-path ./runtime/llm_outputs/liu_enterprise_it/model_output.json
+  --model-output-path ./runtime/llm_outputs/your_case/model_output.json
 
 python ./scripts/crm_assistant.py convert-model-output \
-  --model-output-path ./runtime/llm_outputs/liu_enterprise_it/model_output.json \
-  --context-path ./assets/samples/liu_enterprise_it_context.json \
-  --output-dir ./runtime/from_model/liu_enterprise_it
+  --model-output-path ./runtime/llm_outputs/your_case/model_output.json \
+  --context-path ./assets/samples/your_context.json \
+  --output-dir ./runtime/from_model/your_case
 ```
 
 ## 用户侧 Prompt 模式
@@ -103,22 +103,29 @@ python ./scripts/crm_assistant.py convert-model-output \
 
 - `references/user_side_feishu_prompt.md`
 
+处理这类“用户侧 raw -> 最终写入飞书表格”的请求时，优先遵循下面顺序：
+1. 先读取 `references/openclaw_user_side_write_prompt.md`
+2. 按该文件中的固定 Base、客户信息表、商机推进快照表目标执行
+3. 先提取 `context + transcript`
+4. 再生成两张飞书表记录
+5. 如果当前环境具备飞书实际操作能力，则继续完成写入；如果不具备，则明确返回待写入内容和失败原因
+
 这个模式更适合：
 - 演示
 - 轻量人工协同
 - 直接输入飞书原始会议 JSON，让 OpenClaw 先提取 `context + transcript`
 - 让 OpenClaw 生成客户信息表记录和商机推进快照表记录
-- 当前 OpenClaw 已具备飞书操作能力时，直接写入现有飞书表格
+- 当前 OpenClaw 已具备飞书操作能力时，最终直接写入现有飞书表格
 - 如果当前环境不具备实际写入能力，则返回待写入内容和失败原因
 
 ## 同一客户多轮推进
 
-当同一客户跨多轮会议持续推进、你想查看其阶段变化和得分变化时，使用内置的 journey 样本。
+当同一客户跨多轮会议持续推进、你想查看其阶段变化和得分变化时，可先准备一份自己的 journey manifest。
 
 ```bash
 python ./scripts/crm_assistant.py run-customer-journey \
-  --manifest-path ./assets/samples/liu_enterprise_it_journey_manifest.json \
-  --output-dir ./runtime/liu_enterprise_it_journey
+  --manifest-path ./assets/samples/your_journey_manifest.json \
+  --output-dir ./runtime/your_case_journey
 ```
 
 会生成：
@@ -140,7 +147,7 @@ python ./scripts/crm_assistant.py run-customer-journey \
 4. 可选输入：LLM 的结构化 `model_output.json`
 
 ### 中间处理
-1. 从 transcript 中抽取需求、顾虑、决策信号、沟通风格、预算/区域/时间信息
+1. 从 transcript 中抽取需求、顾虑、沟通风格、MBTI 线索、是否单身线索、成交阻力、价格敏感程度，以及预算/区域/时间信息
 2. 结合 context 补齐客户、负责人、商机、会议时间等基础字段
 3. 生成五类核心业务对象：
    - 会议记录
@@ -151,12 +158,15 @@ python ./scripts/crm_assistant.py run-customer-journey \
 4. 映射成飞书两张表可写入的结构：
    - 客户信息表：按客户 ID 做 upsert
    - 商机推进快照表：每次会议 append 一行
+   - 如果客户信息表中已有旧值，而本轮某字段只得到 `未明确`、`暂无`、`null` 这类弱值，则保留旧值，不要用弱值覆盖
+5. 如果当前运行环境具备飞书实际操作能力，则继续把这两张表记录写入现有飞书多维表格；如果不具备，则返回待写入内容与失败原因
 
 ### 输出
 - 标准 CRM JSON 文件
 - 飞书客户信息表单行对象
 - 飞书商机推进快照单行对象
 - `feishu_bitable_payload` 两表写入载荷
+- 在具备能力时，最终完成对现有飞书表格的写入
 
 ## 脚本
 
@@ -181,13 +191,14 @@ python ./scripts/crm_assistant.py run-customer-journey \
 - `references/feishu-bitable-mapping.md`
 - `references/llm_prompt_template.md`
 - `references/llm_output_schema.md`
+- `references/openclaw_system_prompt.md`
 
 ## 样本资源
 
-使用 `assets/samples/` 中的内置样本可快速测试或演示本 Skill。每组样本包含：
+使用 `assets/samples/` 中你自行准备的样本可快速测试或演示本 Skill。每组样本包含：
 - `*_transcript.txt`
 - `*_context.json`
-- `assets/expected/` 中对应的一份断言文件
+- 如需自动断言测试，再补充 `assets/expected/` 中对应的一份断言文件
 
 运行全部规则样本：
 
@@ -208,9 +219,8 @@ python ./scripts/crm_assistant.py run-model-output-tests
 ```
 
 LLM few-shot 示例位于：
-- `assets/few_shot/chen_familyoffice.json`
-- `assets/few_shot/liu_enterprise_it.json`
-- `assets/few_shot/sun_observer.json`
+- `assets/few_shot/zhongguoyidong_ops_rich.json`
+- `assets/few_shot/ningdeshidai_service_rich.json`
 
 ## 输出规范
 

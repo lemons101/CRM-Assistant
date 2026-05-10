@@ -69,6 +69,15 @@
 - `user_prompt.txt`
 - `prompt_package.json`
 
+默认会拼入 `zhongguoyidong_ops_rich` 和 `ningdeshidai_service_rich`，用来强化这些字段的稳定抽取：
+- `MBTI`
+- `是否单身`
+- `沟通风格`
+- `成交阻力`
+- `价格敏感程度`
+- `风险顾虑`
+- `客户画像摘要`
+
 并支持：
 - 校验大模型结构化输出
 - 将模型输出转成 CRM / 飞书表结果
@@ -123,15 +132,14 @@
 - 客户名称
 - 客户公司
 - 行业
-- 客户负责人
-- 家庭标签
-- 家庭备注
-- 商业偏好
-- 风险顾虑
+- MBTI
+- 是否单身
 - 沟通风格
-- 决策信号
-- 最近关注点
+- 成交阻力
+- 价格敏感程度
+- 风险顾虑
 - 客户画像摘要
+- 客户负责人
 - 最后更新时间
 - 数据来源
 
@@ -180,6 +188,7 @@ crm-assistant/
 │  ├─ feishu-bitable-mapping.md
 │  ├─ llm_prompt_template.md
 │  ├─ llm_output_schema.md
+│  ├─ openclaw_system_prompt.md
 │  ├─ openclaw_user_side_write_prompt.md
 │  └─ user_side_feishu_prompt.md
 ├─ runtime/              # 运行产物 / 测试输出
@@ -214,9 +223,9 @@ pip install -r requirements.txt
 
 ```bash
 python ./scripts/crm_assistant.py process-transcript \
-  --transcript-path ./assets/samples/zhang_manufacturing_transcript.txt \
-  --context-path ./assets/samples/zhang_manufacturing_context.json \
-  --output-dir ./runtime/zhang_manufacturing
+  --transcript-path ./assets/samples/your_transcript.txt \
+  --context-path ./assets/samples/your_context.json \
+  --output-dir ./runtime/your_case
 ```
 
 ---
@@ -227,17 +236,17 @@ python ./scripts/crm_assistant.py process-transcript \
 
 ```bash
 python ./scripts/crm_assistant.py build-context-from-feishu \
-  --raw-input-path ./assets/feishu_raw/liu_enterprise_it.json \
-  --output-dir ./runtime/from_feishu/liu_enterprise_it
+  --raw-input-path ./assets/feishu_raw/your_feishu_raw.json \
+  --output-dir ./runtime/from_feishu/your_case
 ```
 
 再进入主处理：
 
 ```bash
 python ./scripts/crm_assistant.py process-transcript \
-  --transcript-path ./runtime/from_feishu/liu_enterprise_it/transcript.txt \
-  --context-path ./runtime/from_feishu/liu_enterprise_it/context.json \
-  --output-dir ./runtime/from_feishu/liu_enterprise_it/process
+  --transcript-path ./runtime/from_feishu/your_case/transcript.txt \
+  --context-path ./runtime/from_feishu/your_case/context.json \
+  --output-dir ./runtime/from_feishu/your_case/process
 ```
 
 ---
@@ -246,9 +255,9 @@ python ./scripts/crm_assistant.py process-transcript \
 
 ```bash
 python ./scripts/crm_assistant.py build-llm-prompt \
-  --transcript-path ./assets/samples/chen_familyoffice_transcript.txt \
-  --context-path ./assets/samples/chen_familyoffice_context.json \
-  --output-dir ./runtime/llm_prompt/chen_familyoffice
+  --transcript-path ./assets/samples/your_transcript.txt \
+  --context-path ./assets/samples/your_context.json \
+  --output-dir ./runtime/llm_prompt/your_case
 ```
 
 ---
@@ -257,12 +266,12 @@ python ./scripts/crm_assistant.py build-llm-prompt \
 
 ```bash
 python ./scripts/crm_assistant.py validate-model-output \
-  --model-output-path ./runtime/llm_outputs/liu_enterprise_it/model_output.json
+  --model-output-path ./runtime/llm_outputs/your_case/model_output.json
 
 python ./scripts/crm_assistant.py convert-model-output \
-  --model-output-path ./runtime/llm_outputs/liu_enterprise_it/model_output.json \
-  --context-path ./assets/samples/liu_enterprise_it_context.json \
-  --output-dir ./runtime/from_model/liu_enterprise_it
+  --model-output-path ./runtime/llm_outputs/your_case/model_output.json \
+  --context-path ./assets/samples/your_context.json \
+  --output-dir ./runtime/from_model/your_case
 ```
 
 ---
@@ -333,8 +342,8 @@ python ./scripts/crm_assistant.py run-model-output-tests
 
 ```bash
 python ./scripts/crm_assistant.py run-customer-journey \
-  --manifest-path ./assets/samples/liu_enterprise_it_journey_manifest.json \
-  --output-dir ./runtime/liu_enterprise_it_journey
+  --manifest-path ./assets/samples/your_journey_manifest.json \
+  --output-dir ./runtime/your_case_journey
 ```
 
 ---
@@ -385,6 +394,7 @@ python ./scripts/crm_assistant.py run-customer-journey \
 - `references/feishu-bitable-mapping.md`
 - `references/llm_prompt_template.md`
 - `references/llm_output_schema.md`
+- `references/openclaw_system_prompt.md`
 - `references/openclaw_user_side_write_prompt.md`
 - `references/user_side_feishu_prompt.md`
 
