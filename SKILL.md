@@ -93,9 +93,13 @@ python ./scripts/crm_assistant.py convert-model-output \
   --output-dir ./runtime/from_model/liu_enterprise_it
 ```
 
-## 用户侧轻量 Prompt 模式
+## 用户侧 Prompt 模式
 
-如果你不想走额外 API 或脚本写入，而是希望直接从用户侧把内容喂给 OpenClaw，也可以使用项目内置的用户侧 Prompt：
+如果你希望直接从用户侧把飞书原始会议 JSON 喂给 OpenClaw，并让它尽量完成“理解会议 -> 生成结果 -> 写入现有飞书表格”的整条链路，优先使用项目内置 Prompt：
+
+- `references/openclaw_user_side_write_prompt.md`
+
+如需更完整的解释版说明，可再参考：
 
 - `references/user_side_feishu_prompt.md`
 
@@ -103,8 +107,9 @@ python ./scripts/crm_assistant.py convert-model-output \
 - 演示
 - 轻量人工协同
 - 直接输入飞书原始会议 JSON，让 OpenClaw 先提取 `context + transcript`
-- 再让 OpenClaw 产出两张飞书表记录，再决定是否手动贴入飞书
-- 当前 OpenClaw 已具备飞书操作能力时，直接尝试写入
+- 让 OpenClaw 生成客户信息表记录和商机推进快照表记录
+- 当前 OpenClaw 已具备飞书操作能力时，直接写入现有飞书表格
+- 如果当前环境不具备实际写入能力，则返回待写入内容和失败原因
 
 ## 同一客户多轮推进
 

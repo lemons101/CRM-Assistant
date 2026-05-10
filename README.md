@@ -104,12 +104,7 @@
 
 也就是说，从“原始输入”到“结构化结果”的核心业务链路是完整的。
 
-> 当前**没有**实现“官方 API 直写飞书”的自动化脚本。  
-> 当前更适合：
-> - 用户侧 Prompt 实战
-> - 演示
-> - 半自动落表
-> - 让 OpenClaw / 龙虾理解并执行 Skill
+> 当前版本优先面向“用户侧 Prompt 发起 -> OpenClaw 生成并写入飞书表格”的使用方式。
 
 ---
 
@@ -185,6 +180,7 @@ crm-assistant/
 │  ├─ feishu-bitable-mapping.md
 │  ├─ llm_prompt_template.md
 │  ├─ llm_output_schema.md
+│  ├─ openclaw_user_side_write_prompt.md
 │  └─ user_side_feishu_prompt.md
 ├─ runtime/              # 运行产物 / 测试输出
 ├─ scripts/
@@ -275,6 +271,10 @@ python ./scripts/crm_assistant.py convert-model-output \
 
 如果你希望直接喂给 OpenClaw / 龙虾，可优先使用：
 
+- `references/openclaw_user_side_write_prompt.md`
+
+如果你还需要更完整的解释版说明，可再参考：
+
 - `references/user_side_feishu_prompt.md`
 
 这版 Prompt 的输入是：
@@ -339,23 +339,7 @@ python ./scripts/crm_assistant.py run-customer-journey \
 
 ---
 
-## 9. 推荐上传 GitHub 的内容
-
-建议保留：
-
-- `agents/`
-- `assets/`
-- `references/`
-- `scripts/`
-- `SKILL.md`
-- `README.md`
-
-`runtime/` 属于运行产物目录。  
-如果你希望仓库更干净，建议不把大部分 `runtime` 结果提交到 GitHub。
-
----
-
-## 10. 给龙虾 / OpenClaw 部署建议
+## 9. 给龙虾 / OpenClaw 部署建议
 
 如果你准备让龙虾部署这个 Skill，建议优先走这两条方式之一：
 
@@ -365,7 +349,8 @@ python ./scripts/crm_assistant.py run-customer-journey \
 - 适合结构化演示
 
 ### 方式 B：用户侧 Prompt 调用
-- 直接使用 `references/user_side_feishu_prompt.md`
+- 优先使用 `references/openclaw_user_side_write_prompt.md`
+- 如需更完整说明，再参考 `references/user_side_feishu_prompt.md`
 - 输入飞书会议原始 JSON
 - 让模型先提取 `context + transcript`
 - 再生成两张飞书表结果
@@ -374,11 +359,10 @@ python ./scripts/crm_assistant.py run-customer-journey \
 
 ---
 
-## 11. 当前边界
+## 10. 当前边界
 
 当前版本未包含：
 
-- 飞书开放平台 API 自动写入脚本
 - 真正的线上 ASR / 会议录音接入
 - 持久化数据库
 - 正式权限管理与审计机制
@@ -393,7 +377,7 @@ python ./scripts/crm_assistant.py run-customer-journey \
 
 ---
 
-## 12. 参考资料
+## 11. 参考资料
 
 - `SKILL.md`
 - `references/input_schemas.md`
@@ -401,11 +385,12 @@ python ./scripts/crm_assistant.py run-customer-journey \
 - `references/feishu-bitable-mapping.md`
 - `references/llm_prompt_template.md`
 - `references/llm_output_schema.md`
+- `references/openclaw_user_side_write_prompt.md`
 - `references/user_side_feishu_prompt.md`
 
 ---
 
-## 13. 一句话总结
+## 12. 一句话总结
 
 这是一个已经跑通核心链路的 CRM 会议理解 Skill：  
 **它能把飞书会议原始数据或转录文本，转换成客户画像、商机推进判断，以及两张飞书表可直接落地的结构化结果。**
