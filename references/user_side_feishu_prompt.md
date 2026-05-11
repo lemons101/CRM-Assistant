@@ -327,9 +327,28 @@ feishu_raw.json
   -> process_transcript
 ```
 
+如果你希望直接走项目内已经串好的真实落表链路，也可以优先用一条命令完成：
+
+```bash
+python ./scripts/crm_assistant.py ingest-feishu-raw-to-bitable \
+  --raw-input-path ./assets/feishu_raw/your_feishu_raw.json \
+  --output-dir ./runtime/ingest/your_case \
+  --config-path ./your_feishu_config.json
+```
+
+这条链路会自动执行：
+
+```text
+feishu_raw.json
+  -> build_context_from_feishu
+  -> process_transcript
+  -> sync_crm_packet_to_feishu
+```
+
 区别只是：
 
 - 项目脚本版：由脚本做“提取 context/transcript”
 - 用户侧 Prompt 版：由 OpenClaw 先做“提取 context/transcript”
+- 项目脚本版在写客户信息表前，还会用 `existing_customer_fields` / 飞书已有行做一次弱值保护，避免本轮 `未明确`、`暂无` 之类的结果覆盖旧画像
 
 所以你的理解是对的，这一版才更符合真实入口。

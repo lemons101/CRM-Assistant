@@ -249,6 +249,26 @@ python ./scripts/crm_assistant.py process-transcript \
   --output-dir ./runtime/from_feishu/your_case/process
 ```
 
+如果你已经配置好飞书写表信息，推荐直接走一条命令串完整链路：
+
+```bash
+python ./scripts/crm_assistant.py ingest-feishu-raw-to-bitable \
+  --raw-input-path ./assets/feishu_raw/your_feishu_raw.json \
+  --output-dir ./runtime/ingest/your_case \
+  --config-path ./your_feishu_config.json
+```
+
+这会自动完成：
+- 提取 `context.json`
+- 提取 `transcript.txt`
+- 生成 `crm_packet.json`
+- 将客户信息表 upsert 到飞书
+- 将商机推进快照表 append 到飞书
+
+客户信息表写入前会优先保护历史明确值：
+- 如果本轮某字段只得到 `未明确`、`暂无`、`null`、空数组这类弱值，而历史已有清晰值，则保留历史值
+- 真正写入飞书的应是合并后的最终 `customer_table_row`
+
 ---
 
 ## 6.3 方式三：生成标准 LLM Prompt 包
@@ -312,6 +332,8 @@ python ./scripts/crm_assistant.py convert-model-output \
 
 ### `customer_table_row.json`
 客户信息表单行结果。
+
+如果 `context.json` 或飞书已有记录里带了历史画像，当前版本会先做一次“弱值不覆盖旧值”的合并，再输出最终行。
 
 ### `opportunity_snapshot_row.json`
 商机推进快照表单行结果。

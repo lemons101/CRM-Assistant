@@ -111,6 +111,8 @@ def parse_budget_max(text: str) -> int:
         max_value = max(max_value, int(match.group(2)))
     for match in re.finditer(r"(预算|金额超过)\D{0,8}(\d+)\s*万", text):
         max_value = max(max_value, int(match.group(2)))
+    for match in re.finditer(r"(合同金额|金额|控制在|压在)\D{0,8}(\d+)\s*万", text):
+        max_value = max(max_value, int(match.group(2)))
     return max_value
 
 
@@ -139,13 +141,19 @@ def get_business_value(text: str) -> str | None:
         match = re.search(pattern, text)
         if match:
             return f"{match.group(1)}-{match.group(2)}万"
+    match = re.search(r"(\d+)\s*万以内", text)
+    if match:
+        return f"{match.group(1)}万以内"
     match = re.search(r"金额在\s*(\d+)\s*万以内", text)
     if match:
         return f"{match.group(1)}万以内"
     match = re.search(r"(控制在|控制到|希望先控制在|尽量控制在)\s*(\d+)\s*万以内", text)
     if match:
         return f"{match.group(2)}万以内"
-    match = re.search(r"预算[^。；\n]{0,10}(\d+)\s*万", text)
+    match = re.search(r"合同金额\D{0,8}(\d+)\s*万", text)
+    if match:
+        return f"约 {match.group(1)} 万"
+    match = re.search(r"预算[^。；\n]{0,10}?(\d+)\s*万", text)
     if match:
         return f"约 {match.group(1)} 万"
     return None
@@ -154,6 +162,45 @@ def get_business_value(text: str) -> str | None:
 def get_business_value_or_default(text: str) -> str:
     value = get_business_value(text)
     return value if value else "暂无明确业务价值"
+
+
+def clean_opportunity_theme(raw_title: str, company_name: Any = None, customer_name: Any = None) -> str:
+    title = str(raw_title).strip()
+    if not title:
+        return ""
+    for value in [company_name, customer_name]:
+        text = str(value).strip() if value is not None else ""
+        if text:
+            title = title.replace(text, "")
+    title = re.sub(r"[（(][^)）]*[)）]", "", title)
+    title = re.sub(r"(方案)?沟通会$", "", title)
+    title = re.sub(r"分享会$", "分享", title)
+    title = re.sub(r"培训会$", "培训", title)
+    title = re.sub(r"交流会$", "交流", title)
+    title = re.sub(r"评审会$", "评审", title)
+    title = re.sub(r"启动会$", "启动", title)
+    title = re.sub(r"讨论会$", "讨论", title)
+    title = re.sub(r"会议$", "", title)
+    title = re.sub(r"\s+", "", title)
+    title = re.sub(r"^[：:·\-—_]+|[：:·\-—_]+$", "", title)
+    return title.strip()
+
+
+def infer_opportunity_theme(title: Any, text: str, company_name: Any = None, customer_name: Any = None) -> str:
+    title_theme = clean_opportunity_theme(str(title or ""), company_name, customer_name)
+    if len(title_theme) >= 4:
+        return title_theme
+    if re.search(r"资产配置|美元", text):
+        return "资产配置"
+    if re.search(r"安装|部署|上手|教学|带教|培训|操作手册|场景赋能|模板包", text):
+        return "现场教学与场景赋能"
+    if re.search(r"巡检|售后|工厂|缺陷闭环|班组周复盘", text):
+        return "现场运维协同试点"
+    if re.search(r"并网|补件|验收|光伏|资料协同", text):
+        return "并网资料协同"
+    if re.search(r"CRM|客户信息|会议纪要|客户画像|跟进建议", text):
+        return "CRM 一期试点"
+    return "商机推进"
 
 
 def infer_mbti(text: str) -> str:
@@ -451,6 +498,42 @@ def merge_row_preserving_existing_values(current_row: OrderedDict[str, Any], exi
     return merged, preserved_fields
 
 
+def get_summary_value(value: Any, fallback: str) -> str:
+    return fallback if is_weak_field_value(value) else str(value).strip()
+
+
+def build_customer_profile_summary(
+    customer_name: Any,
+    opportunity_stage: Any,
+    mbti: Any,
+    single_status: Any,
+    communication_style: Any,
+    resistance_level: Any,
+    price_sensitivity: Any,
+    risk_concerns: Any,
+) -> str:
+    single_status_text = str(single_status).strip() if single_status is not None else ""
+    single_status_summary = {
+        "是": "单身状态有明确信号",
+        "否": "会话中出现伴侣或婚姻相关信号",
+        "未明确": "是否单身未明确",
+    }.get(single_status_text, "是否单身未明确")
+    customer_name_text = get_summary_value(customer_name, "该客户")
+    stage_text = get_summary_value(opportunity_stage, "当前")
+    mbti_text = get_summary_value(mbti, "未明确")
+    communication_text = get_summary_value(communication_style, "常规沟通")
+    resistance_text = get_summary_value(resistance_level, "未明确")
+    price_text = get_summary_value(price_sensitivity, "未明确")
+    risk_text = get_summary_value(risk_concerns, "暂无明显风险顾虑")
+    return (
+        f"{customer_name_text}当前处于{stage_text}阶段，"
+        f"MBTI 倾向{mbti_text}，{single_status_summary}，"
+        f"沟通风格偏{communication_text}，"
+        f"成交阻力{resistance_text}，价格敏感程度{price_text}，"
+        f"主要风险顾虑为{risk_text}。"
+    )
+
+
 def find_feishu_record_by_field(records: list[dict[str, Any]], field_name: str, expected_value: Any) -> dict[str, Any] | None:
     if expected_value is None:
         return None
@@ -575,6 +658,16 @@ def sync_crm_packet_to_feishu(
             report["customer_response"] = customer_response
         else:
             effective_customer_row, preserved_fields = merge_row_preserving_existing_values(customer_row, existing_record.get("fields") or {})
+            effective_customer_row["客户画像摘要"] = build_customer_profile_summary(
+                effective_customer_row.get("客户名称"),
+                opportunity_row.get("当前阶段"),
+                effective_customer_row.get("MBTI"),
+                effective_customer_row.get("是否单身"),
+                effective_customer_row.get("沟通风格"),
+                effective_customer_row.get("成交阻力"),
+                effective_customer_row.get("价格敏感程度"),
+                effective_customer_row.get("风险顾虑"),
+            )
             customer_response = batch_update_feishu_bitable_records(
                 resolved_app_token,
                 str(resolved_customer_table_id),
@@ -613,6 +706,7 @@ def build_context_from_feishu(raw_input_path: str | Path, output_dir: str | Path
     raw = read_json(raw_input_path)
     participants = list(raw.get("participants") or [])
     crm_binding = raw.get("crm_binding") or {}
+    existing_customer_fields = get_object_value(crm_binding, "existing_customer_fields", {}) or {}
     external_participant = get_first_participant_by_role(participants, ["external", "guest", "customer"])
     internal_participant = get_first_participant_by_role(participants, ["internal", "host", "owner"])
     transcript_text = get_transcript_text(raw)
@@ -647,6 +741,7 @@ def build_context_from_feishu(raw_input_path: str | Path, output_dir: str | Path
         ("source_meeting_id", meeting.get("meeting_id")),
         ("source_event_id", meeting.get("calendar_event_id")),
         ("source_title", meeting.get("title")),
+        ("existing_customer_fields", existing_customer_fields),
     ])
 
     output = Path(output_dir)
@@ -672,6 +767,7 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
     company_name = get_object_value(context, "company_name")
     industry_name = get_object_value(context, "industry")
     source_channel = get_object_value(context, "channel", "手动导入")
+    existing_customer_fields = get_object_value(context, "existing_customer_fields", {}) or {}
 
     customer_lines = [line for line in lines if re.search(r"^(客户|张总|陈女士|刘总|孙总|客户A|客户B|客户C|客户D)[:：]", line)]
     if not customer_lines:
@@ -780,25 +876,24 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
     single_status = infer_single_status(customer_text)
     resistance_level = infer_resistance_level(opportunity_stage, risk_concerns, customer_text)
     price_sensitivity = infer_price_sensitivity(customer_text, risk_concerns, budget_max)
-    single_status_summary = {"是": "单身状态有明确信号", "否": "会话中出现伴侣或婚姻相关信号", "未明确": "是否单身未明确"}[single_status]
-    profile_summary = (
-        f"{get_object_value(context, 'customer_name')}当前处于{opportunity_stage}阶段，"
-        f"MBTI 倾向{mbti}，{single_status_summary}，"
-        f"沟通风格偏{join_values(communication_style, '常规沟通')}，"
-        f"成交阻力{resistance_level}，价格敏感程度{price_sensitivity}，"
-        f"主要风险顾虑为{join_values(risk_concerns, '暂无明显风险顾虑')}。"
+    profile_summary = build_customer_profile_summary(
+        get_object_value(context, "customer_name"),
+        opportunity_stage,
+        mbti,
+        single_status,
+        join_values(communication_style, "常规沟通"),
+        resistance_level,
+        price_sensitivity,
+        join_values(risk_concerns, "暂无明显风险顾虑"),
     )
     latest_progress = f"本次会议后，客户处于{opportunity_stage}阶段，Lead Score {lead_score}，推荐动作：{recommended_action}"
 
-    if re.search("资产配置|美元", all_text):
-        opportunity_theme = "资产配置"
-    elif re.search("巡检|售后|工厂", all_text):
-        opportunity_theme = "售后巡检试点"
-    elif re.search("CRM|客户信息|会议纪要", all_text):
-        opportunity_theme = "CRM 一期试点"
-    else:
-        opportunity_theme = "商机推进"
-
+    opportunity_theme = infer_opportunity_theme(
+        get_object_value(context, "source_title"),
+        all_text,
+        company_name,
+        get_object_value(context, "customer_name"),
+    )
     opportunity_name = f"{get_object_value(context, 'customer_name')} - {opportunity_theme}"
     opportunity_description = {
         "已成交": "客户已完成合同签署或成交确认，当前重点已转向项目启动、交付排期与阶段验收。",
@@ -902,6 +997,17 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         ("最后更新时间", isoformat_or_none(meeting_time)),
         ("数据来源", source_channel),
     ])
+    customer_table_row, preserved_customer_fields = merge_row_preserving_existing_values(customer_table_row, existing_customer_fields)
+    customer_table_row["客户画像摘要"] = build_customer_profile_summary(
+        customer_table_row.get("客户名称"),
+        opportunity_stage,
+        customer_table_row.get("MBTI"),
+        customer_table_row.get("是否单身"),
+        customer_table_row.get("沟通风格"),
+        customer_table_row.get("成交阻力"),
+        customer_table_row.get("价格敏感程度"),
+        customer_table_row.get("风险顾虑"),
+    )
     opportunity_snapshot_row = OrderedDict([
         ("商机ID", get_object_value(context, "opportunity_id")),
         ("客户ID", get_object_value(context, "customer_id")),
@@ -934,6 +1040,7 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         ("follow_up_task", follow_up_task),
         ("pre_meeting_brief", pre_meeting_brief),
         ("customer_table_row", customer_table_row),
+        ("customer_preserved_fields", preserved_customer_fields),
         ("opportunity_snapshot_row", opportunity_snapshot_row),
         ("feishu_bitable_payload", feishu_payload),
     ])
@@ -1068,6 +1175,7 @@ def convert_model_output_to_crm(model_output_path: str | Path, output_dir: str |
     context = read_json(context_path) if context_path and Path(context_path).exists() else None
     source_channel = get_object_value(context, "channel", "LLM 结构化输出")
     owner = get_object_value(context, "owner", model["follow_up_task"]["owner"])
+    existing_customer_fields = get_object_value(context, "existing_customer_fields", {}) or {}
     customer_table_row = OrderedDict([
         ("客户ID", model["customer_profile_update"]["customer_id"]),
         ("客户名称", model["meeting"]["customer_name"]),
@@ -1084,6 +1192,17 @@ def convert_model_output_to_crm(model_output_path: str | Path, output_dir: str |
         ("最后更新时间", model["meeting"]["meeting_time"]),
         ("数据来源", source_channel),
     ])
+    customer_table_row, preserved_customer_fields = merge_row_preserving_existing_values(customer_table_row, existing_customer_fields)
+    customer_table_row["客户画像摘要"] = build_customer_profile_summary(
+        customer_table_row.get("客户名称"),
+        get_object_value(model["opportunity_update"], "opportunity_stage", "当前"),
+        customer_table_row.get("MBTI"),
+        customer_table_row.get("是否单身"),
+        customer_table_row.get("沟通风格"),
+        customer_table_row.get("成交阻力"),
+        customer_table_row.get("价格敏感程度"),
+        customer_table_row.get("风险顾虑"),
+    )
     opportunity_snapshot_row = OrderedDict([
         ("商机ID", model["opportunity_update"]["opportunity_id"]),
         ("客户ID", model["meeting"]["customer_id"]),
@@ -1112,6 +1231,7 @@ def convert_model_output_to_crm(model_output_path: str | Path, output_dir: str |
         ("follow_up_task", model["follow_up_task"]),
         ("pre_meeting_brief", model["pre_meeting_brief"]),
         ("customer_table_row", customer_table_row),
+        ("customer_preserved_fields", preserved_customer_fields),
         ("opportunity_snapshot_row", opportunity_snapshot_row),
         (
             "feishu_bitable_payload",
@@ -1331,6 +1451,50 @@ def run_customer_journey(manifest_path: str | Path, output_dir: str | Path) -> d
     return journey
 
 
+def ingest_feishu_raw_to_bitable(
+    raw_input_path: str | Path,
+    output_dir: str | Path,
+    config_path: str | Path | None = None,
+    app_id: str | None = None,
+    app_secret: str | None = None,
+    app_token_or_url: str | None = None,
+    customer_table_id: str | None = None,
+    opportunity_table_id: str | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    output = Path(output_dir)
+    build_output = output / "build"
+    process_output = output / "process"
+    sync_output = output / "sync"
+
+    build_result = build_context_from_feishu(raw_input_path, build_output)
+    crm_packet = process_transcript(build_output / "transcript.txt", build_output / "context.json", process_output)
+    sync_result = sync_crm_packet_to_feishu(
+        process_output / "crm_packet.json",
+        sync_output,
+        config_path,
+        app_id,
+        app_secret,
+        app_token_or_url,
+        customer_table_id,
+        opportunity_table_id,
+        dry_run,
+    )
+    result = OrderedDict([
+        ("raw_input_path", resolve_str(raw_input_path)),
+        ("build_result_path", resolve_str(build_output / "build_result.json")),
+        ("crm_packet_path", resolve_str(process_output / "crm_packet.json")),
+        ("sync_result_path", resolve_str(sync_output / "feishu_sync_result.json")),
+        ("customer_id", crm_packet["customer_table_row"].get("客户ID")),
+        ("opportunity_id", crm_packet["opportunity_snapshot_row"].get("商机ID")),
+        ("customer_action", sync_result.get("customer_action")),
+        ("opportunity_action", sync_result.get("opportunity_action")),
+    ])
+    output.mkdir(parents=True, exist_ok=True)
+    write_json(output / "ingest_result.json", result)
+    return result
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="CRM Assistant Python CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1390,6 +1554,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--customer-table-id")
     p.add_argument("--opportunity-table-id")
     p.add_argument("--dry-run", action="store_true")
+
+    p = sub.add_parser("ingest-feishu-raw-to-bitable")
+    p.add_argument("--raw-input-path", required=True)
+    p.add_argument("--output-dir", required=True)
+    p.add_argument("--config-path")
+    p.add_argument("--app-id")
+    p.add_argument("--app-secret")
+    p.add_argument("--app-token-or-url")
+    p.add_argument("--customer-table-id")
+    p.add_argument("--opportunity-table-id")
+    p.add_argument("--dry-run", action="store_true")
     return parser
 
 
@@ -1438,6 +1613,19 @@ def main() -> None:
             args.dry_run,
         )
         print(f"Feishu bitable sync result generated at: {args.output_dir}")
+    elif args.command == "ingest-feishu-raw-to-bitable":
+        ingest_feishu_raw_to_bitable(
+            args.raw_input_path,
+            args.output_dir,
+            args.config_path,
+            args.app_id,
+            args.app_secret,
+            args.app_token_or_url,
+            args.customer_table_id,
+            args.opportunity_table_id,
+            args.dry_run,
+        )
+        print(f"Feishu raw input fully ingested to bitable at: {args.output_dir}")
 
 
 if __name__ == "__main__":

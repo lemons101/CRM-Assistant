@@ -127,6 +127,7 @@ https://xcnid10v9ucm.feishu.cn/base/Q5phb73qdaA3JsszdV7cHFQkn5d
 - 商机推进快照表：每次会议直接追加一条新记录
 - 如果表格字段名和标准字段名不完全一致，请优先按语义匹配最接近字段
 - 如果客户信息表里某个字段已经有明确旧值，而你本轮对该字段只能判断为 `未明确`、`暂无`、`null` 或空数组，则不要覆盖旧值，保留原字段内容
+- 如果你先做了“旧值保留”合并，那么最终写入客户信息表时，必须写入合并后的最终 `customer_table_row`，不要把合并前的临时结果写进去
 
 商机阶段只能是以下六个值之一：
 - 初次接触
@@ -203,6 +204,28 @@ https://xcnid10v9ucm.feishu.cn/base/Q5phb73qdaA3JsszdV7cHFQkn5d
 ```text
 如果你当前能直接操作飞书，请在生成结果后继续完成写入，并返回写入状态。
 ```
+
+## 和项目脚本的对应关系
+
+如果不想只靠 Prompt 推进，项目内更稳的实写链路是：
+
+```bash
+python ./scripts/crm_assistant.py ingest-feishu-raw-to-bitable \
+  --raw-input-path ./assets/feishu_raw/your_feishu_raw.json \
+  --output-dir ./runtime/ingest/your_case \
+  --config-path ./your_feishu_config.json
+```
+
+它会自动完成：
+
+```text
+feishu_raw.json
+  -> build_context_from_feishu
+  -> process_transcript
+  -> sync_crm_packet_to_feishu
+```
+
+并且在客户信息表更新前，优先保护历史明确值，避免被 `未明确`、`暂无` 这类弱值覆盖。
 
 ## 典型案例
 
