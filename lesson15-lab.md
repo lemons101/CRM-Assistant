@@ -79,7 +79,7 @@ https://github.com/lemons101/CRM-Assistant.git
 ## 3. 配置飞书写表参数（发给龙虾）
 
 > **发送前先自己填好真实值，不要把占位符发出去。**
-> - `FEISHU_APP_ID` / `FEISHU_APP_SECRET`：真实写入飞书时需要。优先使用龙虾环境里已有的环境变量；如果环境里没有，再从飞书开放平台 -> 应用详情页获取
+> - `FEISHU_APP_ID` / `FEISHU_APP_SECRET`：飞书开放平台 -> 应用详情页获取
 > - `FEISHU_BITABLE_APP_TOKEN`：第 1 步龙虾返回的 `app_token`
 > - `FEISHU_CUSTOMER_TABLE_ID`：Customers 的 `table_id`
 > - `FEISHU_OPPORTUNITY_TABLE_ID`：OpportunitySnapshots 的 `table_id`
@@ -87,21 +87,19 @@ https://github.com/lemons101/CRM-Assistant.git
 把真实值替换进去，复制下面文本框里的内容，直接发给龙虾：
 
 ```text
-请先检查当前环境里是否已经有 FEISHU_APP_ID 和 FEISHU_APP_SECRET。
+请在 /root/projects/CRM-Assistant/feishu_config.json 写入下面的配置：
 
-如果环境里已经有这两个值，请不要把 App ID / App Secret 重复写进文件，只需要在 /root/projects/CRM-Assistant/feishu_config.json 写入下面三项：
-
+app_id：cli_xxxxxxxx
+app_secret：xxxxxxxx
 app_token：xxxxxxxx
 customer_table_id：tblxxxxxxxx
 opportunity_snapshot_table_id：tblxxxxxxxx
 
-如果环境里没有 FEISHU_APP_ID 或 FEISHU_APP_SECRET，请先告诉我缺少哪一个，我再补充真实值；不要使用 cli_xxxxxxxx 或 xxxxxxxx 这样的占位符继续往下跑。
-
 写入后请确认：
 1. 文件路径是 /root/projects/CRM-Assistant/feishu_config.json
 2. JSON 格式合法
-3. app_token、customer_table_id、opportunity_snapshot_table_id 都不是空值
-4. FEISHU_APP_ID 和 FEISHU_APP_SECRET 是否已经能从环境变量读取
+3. app_id、app_secret、app_token、customer_table_id、opportunity_snapshot_table_id 都不是空值
+4. 没有把 cli_xxxxxxxx 或 xxxxxxxx 这样的占位符原样写进去
 ```
 
 ---
@@ -234,7 +232,7 @@ feishu_raw.json
 - [ ] 龙虾部署 CRM-Assistant 成功
 - [ ] `python scripts/crm_assistant.py --help` 能正常输出
 - [ ] 飞书 Base 已创建，包含 Customers 和 OpportunitySnapshots 两张表
-- [ ] `feishu_config.json` 已配置真实 app_token / table_id，且 App ID / App Secret 可由环境变量读取或已安全配置
+- [ ] `feishu_config.json` 已配置真实 App ID / App Secret / app_token / table_id
 - [ ] 本地样本生成 `context.json`、`transcript.txt`、`crm_packet.json`
 - [ ] 本地样本生成 `customer_table_row.json` 和 `opportunity_snapshot_row.json`
 - [ ] `inspect-feishu-bitable` 能读到两张表字段
