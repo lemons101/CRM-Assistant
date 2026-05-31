@@ -63,12 +63,12 @@ https://github.com/lemons101/CRM-Assistant.git
 部署目录：
 /root/projects/CRM-Assistant
 
-请你自动完成项目初始化：如果目录已存在就拉取最新代码；如果不存在就克隆仓库。然后创建或复用 Python 虚拟环境，安装依赖，并确认 CRM-Assistant 的命令行入口可以正常打开帮助信息。
+请你自动完成项目初始化：如果目录已存在就拉取最新代码；如果不存在就克隆仓库。然后在项目目录下新建一个名为 .venv 的 Python 虚拟环境，并在这个 .venv 里安装依赖。不要直接使用系统 Python 环境；如果 .venv 已经存在，请先确认它可用，再继续复用。最后确认 CRM-Assistant 的命令行入口可以正常打开帮助信息。
 
 完成后告诉我：
 1. git pull 或 git clone 是否成功
-2. Python 虚拟环境是否可用
-3. 依赖是否安装成功
+2. .venv 虚拟环境是否已新建或确认可用
+3. 依赖是否已经安装在 .venv 里
 4. CRM-Assistant 的帮助信息是否能正常输出
 ```
 
