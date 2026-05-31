@@ -17,13 +17,14 @@
 | 4 | CRM-Assistant 仓库 | `https://github.com/lemons101/CRM-Assistant.git` |
 | 5 | 一份飞书会议原始 JSON | 仓库自带 demo，不用自己准备 |
 
+> 本手册里的“发给龙虾”尽量使用对话式指令。你只需要告诉龙虾目标、资料位置和希望它返回什么；具体命令由龙虾自己选择并执行。只有排障时，才需要让龙虾贴出失败命令和完整报错。
+
 ---
 
 ## 1. 创建飞书多维表格（发给龙虾）
 
-在飞书 DM 里发送以下消息：
+在飞书 DM 里发送：
 
-```
 请帮我在飞书中创建一个用于 CRM Assistant Demo 的多维表格 Base。
 
 要求：
@@ -42,7 +43,6 @@ OpportunitySnapshots 字段：
 2. app_token
 3. Customers 的 table_id
 4. OpportunitySnapshots 的 table_id
-```
 
 龙虾会返回 `app_token` 和两张表的 `table_id`，先记下来，后面配置会用到。
 
@@ -50,7 +50,8 @@ OpportunitySnapshots 字段：
 
 ## 2. 部署项目（发给龙虾）
 
-```
+在飞书 DM 里发送：
+
 请帮我部署并验证 CRM-Assistant。
 
 仓库地址：
@@ -59,29 +60,13 @@ https://github.com/lemons101/CRM-Assistant.git
 部署目录：
 /root/projects/CRM-Assistant
 
-请执行：
-
-mkdir -p /root/projects
-cd /root/projects
-if [ -d CRM-Assistant ]; then
-  cd CRM-Assistant && git pull
-else
-  git clone https://github.com/lemons101/CRM-Assistant.git
-  cd CRM-Assistant
-fi
-
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-python scripts/crm_assistant.py --help
+请你自动完成项目初始化：如果目录已存在就拉取最新代码；如果不存在就克隆仓库。然后创建或复用 Python 虚拟环境，安装依赖，并确认 CRM-Assistant 的命令行入口可以正常打开帮助信息。
 
 完成后告诉我：
 1. git pull 或 git clone 是否成功
 2. Python 虚拟环境是否可用
 3. 依赖是否安装成功
-4. `python scripts/crm_assistant.py --help` 是否能正常输出
-```
+4. CRM-Assistant 的帮助信息是否能正常输出
 
 龙虾完成后你会收到部署确认。
 
@@ -97,22 +82,18 @@ python scripts/crm_assistant.py --help
 
 把真实值替换进去，发送：
 
-```
 请在 /root/projects/CRM-Assistant/feishu_config.json 写入下面的配置：
 
-{
-  "app_id": "cli_xxxxxxxx",
-  "app_secret": "xxxxxxxx",
-  "app_token": "xxxxxxxx",
-  "customer_table_id": "tblxxxxxxxx",
-  "opportunity_snapshot_table_id": "tblxxxxxxxx"
-}
+app_id：cli_xxxxxxxx
+app_secret：xxxxxxxx
+app_token：xxxxxxxx
+customer_table_id：tblxxxxxxxx
+opportunity_snapshot_table_id：tblxxxxxxxx
 
 写入后请确认：
 1. 文件路径是 /root/projects/CRM-Assistant/feishu_config.json
 2. JSON 格式合法
 3. app_token、customer_table_id、opportunity_snapshot_table_id 都不是空值
-```
 
 ---
 
@@ -120,29 +101,19 @@ python scripts/crm_assistant.py --help
 
 先跑一遍不接飞书的本地链路，确认 CRM 结构化结果可以生成：
 
-```
+在飞书 DM 里发送：
+
 请用 CRM-Assistant 项目跑一次本地样本验证。
 
-执行：
+请使用仓库自带的样本 `assets/feishu_raw/pingan_longxiahezi_need_confirmation.json`，先把飞书原始数据整理成 context 和 transcript，再继续生成 CRM 结构化结果。
 
-cd /root/projects/CRM-Assistant
-source .venv/bin/activate
-
-python scripts/crm_assistant.py build-context-from-feishu \
-  --raw-input-path assets/feishu_raw/pingan_longxiahezi_need_confirmation.json \
-  --output-dir runtime/lab15_probe/build
-
-python scripts/crm_assistant.py process-transcript \
-  --transcript-path runtime/lab15_probe/build/transcript.txt \
-  --context-path runtime/lab15_probe/build/context.json \
-  --output-dir runtime/lab15_probe/process
+这一步只做本地处理，不要写入飞书。输出目录请放在 `runtime/lab15_probe/` 下面，方便后续继续使用。
 
 执行完后告诉我：
 1. 是否生成 context.json 和 transcript.txt
 2. 是否生成 crm_packet.json
 3. 是否生成 customer_table_row.json 和 opportunity_snapshot_row.json
 4. 当前商机阶段、Lead Score、意向等级、推荐动作分别是什么
-```
 
 > 注意：这一步只验证本地结构化处理，不会真实写入飞书。
 
@@ -150,27 +121,13 @@ python scripts/crm_assistant.py process-transcript \
 
 ## 5. 检查飞书表结构（发给龙虾）
 
-```
+在飞书 DM 里发送：
+
 请用 CRM-Assistant 检查飞书多维表格结构。
 
-执行：
+请使用我已经配置好的飞书 App ID、App Secret、app_token，以及 Customers 和 OpportunitySnapshots 的 table_id，检查两张表的字段是否和实验手册一致。
 
-cd /root/projects/CRM-Assistant
-source .venv/bin/activate
-
-python scripts/crm_assistant.py inspect-feishu-bitable \
-  --app-id "你的 FEISHU_APP_ID" \
-  --app-secret "你的 FEISHU_APP_SECRET" \
-  --app-token-or-url "你的 app_token 或 Base 链接" \
-  --output-dir runtime/lab15_feishu/inspect_customers \
-  --table-id "Customers 的 table_id"
-
-python scripts/crm_assistant.py inspect-feishu-bitable \
-  --app-id "你的 FEISHU_APP_ID" \
-  --app-secret "你的 FEISHU_APP_SECRET" \
-  --app-token-or-url "你的 app_token 或 Base 链接" \
-  --output-dir runtime/lab15_feishu/inspect_opportunities \
-  --table-id "OpportunitySnapshots 的 table_id"
+检查结果请保存到 `runtime/lab15_feishu/` 下面，分别保存 Customers 和 OpportunitySnapshots 的检查结果。
 
 完成后告诉我：
 1. 是否能拿到 tenant_access_token
@@ -178,7 +135,6 @@ python scripts/crm_assistant.py inspect-feishu-bitable \
 3. Customers 字段是否完整
 4. OpportunitySnapshots 字段是否完整
 5. 如果字段缺失，请列出缺失字段
-```
 
 如果这里失败，先不要继续写表，优先检查 App ID / App Secret、应用权限、Base 链接和 table_id。
 
@@ -188,19 +144,11 @@ python scripts/crm_assistant.py inspect-feishu-bitable \
 
 dry-run 会生成写表计划，但不会真实写入飞书。
 
-```
+在飞书 DM 里发送：
+
 请用 CRM-Assistant 做一次飞书写表 dry-run。
 
-执行：
-
-cd /root/projects/CRM-Assistant
-source .venv/bin/activate
-
-python scripts/crm_assistant.py sync-feishu-bitable \
-  --crm-packet-path runtime/lab15_probe/process/crm_packet.json \
-  --output-dir runtime/lab15_feishu/dry_run \
-  --config-path feishu_config.json \
-  --dry-run
+请使用第 4 步生成的 `crm_packet.json` 和第 3 步配置好的 `feishu_config.json`。这一步只生成写表计划，不要真实写入飞书。输出结果请保存到 `runtime/lab15_feishu/dry_run`。
 
 执行完后告诉我：
 1. feishu_sync_result.json 是否已生成
@@ -208,7 +156,6 @@ python scripts/crm_assistant.py sync-feishu-bitable \
 3. customer_action 是 create 还是 update
 4. opportunity_action 是 create 还是 skipped
 5. 待写入的客户名称、当前阶段、Lead Score、推荐动作分别是什么
-```
 
 > 注意：看到 `feishu_sync_result.json` 不代表已经写入飞书。只有去掉 `--dry-run` 后才会真实写入。
 
@@ -218,18 +165,11 @@ python scripts/crm_assistant.py sync-feishu-bitable \
 
 确认第 5 步表结构正确、第 6 步 dry-run 正常后，再执行真实写入：
 
-```
+在飞书 DM 里发送：
+
 请用 CRM-Assistant 把本次 CRM 结果真实写入飞书多维表格。
 
-执行：
-
-cd /root/projects/CRM-Assistant
-source .venv/bin/activate
-
-python scripts/crm_assistant.py sync-feishu-bitable \
-  --crm-packet-path runtime/lab15_probe/process/crm_packet.json \
-  --output-dir runtime/lab15_feishu/write_once \
-  --config-path feishu_config.json
+请使用第 4 步生成的 `crm_packet.json` 和第 3 步配置好的 `feishu_config.json`。这一次请真实写入飞书：Customers 表按客户 ID 新增或更新，OpportunitySnapshots 表追加一条商机推进快照。输出结果请保存到 `runtime/lab15_feishu/write_once`。
 
 执行完成后，用中文返回：
 1. 是否写入成功
@@ -237,7 +177,6 @@ python scripts/crm_assistant.py sync-feishu-bitable \
 3. OpportunitySnapshots 是否追加成功
 4. 本次写入的客户名称、当前阶段、Lead Score、意向等级、推荐动作
 5. 如果失败，返回失败命令和完整报错
-```
 
 写入成功后，打开飞书多维表格确认两张表里都有记录。
 
@@ -247,18 +186,11 @@ python scripts/crm_assistant.py sync-feishu-bitable \
 
 如果你想从飞书原始 JSON 直接跑到落表，可以让龙虾执行：
 
-```
+在飞书 DM 里发送：
+
 请用 CRM-Assistant 跑完整 ingest 链路：从飞书原始 JSON 生成 CRM 结果，并写入飞书多维表格。
 
-执行：
-
-cd /root/projects/CRM-Assistant
-source .venv/bin/activate
-
-python scripts/crm_assistant.py ingest-feishu-raw-to-bitable \
-  --raw-input-path assets/feishu_raw/pingan_longxiahezi_need_confirmation.json \
-  --output-dir runtime/lab15_ingest/pingan_need_confirmation \
-  --config-path feishu_config.json
+请使用样本 `assets/feishu_raw/pingan_longxiahezi_need_confirmation.json` 和配置文件 `feishu_config.json`，一次性完成：提取 context、生成 transcript、生成 CRM 结果、写入飞书两张表。输出目录请放到 `runtime/lab15_ingest/pingan_need_confirmation`。
 
 完成后告诉我：
 1. build_result_path 是否生成
@@ -266,7 +198,6 @@ python scripts/crm_assistant.py ingest-feishu-raw-to-bitable \
 3. sync_result_path 是否生成
 4. Customers 是新增还是更新
 5. OpportunitySnapshots 是否追加成功
-```
 
 这一步等价于：
 
@@ -283,29 +214,20 @@ feishu_raw.json
 
 如果你希望以后直接让龙虾按自然语言触发 CRM-Assistant，可以把仓库里的 Skill 注册到 OpenClaw：
 
-```
+在飞书 DM 里发送：
+
 请将 CRM-Assistant 的 Skill 注册到 OpenClaw。
 
-执行：
-
-mkdir -p ~/.openclaw/workspace/skills/crm-assistant
-cp /root/projects/CRM-Assistant/SKILL.md \
-  ~/.openclaw/workspace/skills/crm-assistant/SKILL.md
-
-请在 ~/.openclaw/.env 中添加或更新：
-
-CRM_ASSISTANT_ROOT=/root/projects/CRM-Assistant
+请把 `/root/projects/CRM-Assistant/SKILL.md` 注册到 OpenClaw 的 skills 目录中，并在 OpenClaw 环境配置里设置 CRM_ASSISTANT_ROOT，指向 `/root/projects/CRM-Assistant`。
 
 完成后确认：
-1. ~/.openclaw/workspace/skills/crm-assistant/SKILL.md 已存在
-2. ~/.openclaw/.env 中已有 CRM_ASSISTANT_ROOT
-```
+1. CRM-Assistant 的 Skill 文件已在 OpenClaw skills 目录中
+2. OpenClaw 环境配置里已有 CRM_ASSISTANT_ROOT
+3. 之后可以用自然语言触发 CRM Assistant
 
 注册完成后，可以在飞书 DM 里试一句：
 
-```
 请用 CRM Assistant 处理这份飞书会议原始数据，并生成客户信息表和商机推进快照表的写入结果。
-```
 
 ---
 
