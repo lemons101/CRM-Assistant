@@ -120,6 +120,10 @@ def clamp_score(value: int) -> int:
     return max(0, min(100, value))
 
 
+def has_pattern(text: str, pattern: str) -> bool:
+    return bool(re.search(pattern, text))
+
+
 def parse_datetime(value: Any) -> datetime | None:
     if value is None:
         return None
@@ -254,6 +258,100 @@ def infer_price_sensitivity(customer_text: str, risk_concerns: list[str], budget
     if budget_max >= 80:
         return "低"
     return "未明确"
+
+
+def calculate_lead_score(
+    opportunity_stage: str,
+    customer_text: str,
+    all_text: str,
+    budget_max: int,
+    next_meeting_time: datetime | None,
+    decision_signals: list[str],
+    risk_concerns: list[str],
+) -> int:
+    timeline_signal = has_pattern(customer_text, r"下周|本周|本月|月底|季度内|尽快|明天|周五之前|六月底前")
+    scope_signal = has_pattern(customer_text, r"边界|范围|收敛|梳理清楚|需求对齐|需求确认|必须做|后放|优先级")
+    proposal_signal = has_pattern(customer_text, r"报价|方案|演示|保守版|标准版|角色权限表|流程节点")
+    acceptance_signal = has_pattern(customer_text, r"可以|能接受|认可|方向比上次清楚多了|没问题")
+    procurement_signal = has_pattern(customer_text, r"采购|法务|签批|内部评审|内部推进")
+    implementation_signal = has_pattern(customer_text, r"上线一期|先上线|试运行|服务站|启动会|联调|推进清单")
+    contract_signal = has_pattern(customer_text, r"合同|定稿|付款|付款节点|合同金额|签约|最终版")
+    signoff_signal = has_pattern(customer_text, r"这周就进签约流程|周三可以完成签约|不会再拖|没有新增阻塞|基本通过了")
+    closed_won_signal = has_pattern(customer_text, r"已成交|正式成交|成交确认|合同(这周)?已经签完|合同今天上午已经完成双方签署|完成双方签署|签署完成|双方法务盖章|项目已经正式敲定|金额.*已经锁定|这笔商机就按正式成交记录")
+    kickoff_signal = has_pattern(customer_text, r"启动会|交付负责人|项目经理|阶段验收|交付执行|接口联调计划")
+    budget_signal = budget_max > 0
+    multi_role_signal = bool(decision_signals) or has_pattern(customer_text, r"运营管理|质控|信息科技|采购|法务|总部")
+    risk_signal = bool(risk_concerns)
+
+    lead_score = {
+        "初次接触": 20,
+        "需求确认": 30,
+        "方案沟通": 32,
+        "推进中": 30,
+        "待成交": 40,
+        "已成交": 50,
+    }[opportunity_stage]
+
+    if budget_signal:
+        lead_score += 14
+    if timeline_signal:
+        lead_score += 6
+    if next_meeting_time is not None:
+        lead_score += 4
+
+    if opportunity_stage == "需求确认":
+        if multi_role_signal:
+            lead_score += 8
+        if scope_signal:
+            lead_score += 14
+        if risk_signal:
+            lead_score += 6
+    elif opportunity_stage == "方案沟通":
+        if multi_role_signal:
+            lead_score += 8
+        if proposal_signal:
+            lead_score += 16
+        if acceptance_signal:
+            lead_score += 6
+        if has_pattern(customer_text, r"保守版|标准版|双版本|报价结构"):
+            lead_score += 4
+    elif opportunity_stage == "推进中":
+        if procurement_signal:
+            lead_score += 16
+        if implementation_signal:
+            lead_score += 12
+        if risk_signal:
+            lead_score += 10
+    elif opportunity_stage == "待成交":
+        if contract_signal:
+            lead_score += 20
+        if procurement_signal:
+            lead_score += 10
+        if signoff_signal:
+            lead_score += 6
+        if kickoff_signal:
+            lead_score += 6
+        if has_pattern(customer_text, r"付款节点|合同版本|最终合同版本|周三可以完成签约|签约收掉|这周就把签约收掉|把合同版本和付款安排锁定"):
+            lead_score += 10
+    elif opportunity_stage == "已成交":
+        if closed_won_signal:
+            lead_score += 25
+        if kickoff_signal:
+            lead_score += 10
+        if has_pattern(all_text, r"金额.*锁定|付款按之前确认|正式签署|阶段验收"):
+            lead_score += 11
+    else:
+        if multi_role_signal:
+            lead_score += 6
+        if proposal_signal:
+            lead_score += 6
+
+    if has_pattern(customer_text, r"不着急|先了解|明年再说|明年再定|先看看|观察一下"):
+        lead_score -= 15
+    if has_pattern(customer_text, r"暂无预算|预算要等明年|预算还没批"):
+        lead_score -= 12
+
+    return clamp_score(lead_score)
 
 
 def get_sales_region(context: dict[str, Any], text: str) -> str | None:
@@ -811,32 +909,6 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
     sales_region = get_sales_region(context, all_text)
     business_value = get_business_value_or_default(all_text)
 
-    lead_score = 50
-    if budget_max > 0:
-        lead_score += 12
-    if re.search("下周|本周|本月|月底|季度内|尽快|明天|周五之前|六月底前", customer_text):
-        lead_score += 10
-    if next_meeting_time is not None:
-        lead_score += 8
-    if decision_signals:
-        lead_score += 8
-    if re.search("报价|方案|演示|试点|实施清单|字段清单", customer_text):
-        lead_score += 8
-    if re.search("两家工厂|集团|家族办公室|资产配置|华北团队", customer_text):
-        lead_score += 6
-    if re.search("家族办公室|资产配置|美元", all_text):
-        lead_score += 6
-    if risk_concerns:
-        lead_score += 3
-    if re.search("不着急|先了解|明年再说|明年再定|先看看|观察一下", customer_text):
-        lead_score -= 15
-    if re.search("暂无预算|预算要等明年|预算还没批", customer_text):
-        lead_score -= 12
-    if re.search("采购|法务", customer_text):
-        lead_score += 6
-    lead_score = clamp_score(lead_score)
-
-    intent_level = "high" if lead_score >= 75 else ("medium" if lead_score >= 60 else "low")
     opportunity_stage = "初次接触"
     if re.search("已成交|正式成交|成交确认|合同(这周)?已经签完|合同今天上午已经完成双方签署|完成双方签署|签署完成|双方法务盖章|项目已经正式敲定|金额.*已经锁定|这笔商机就按正式成交记录", customer_text):
         opportunity_stage = "已成交"
@@ -850,7 +922,18 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         opportunity_stage = "方案沟通"
     elif need_lines:
         opportunity_stage = "需求确认"
-    if intent_level == "low":
+
+    lead_score = calculate_lead_score(
+        opportunity_stage,
+        customer_text,
+        all_text,
+        budget_max,
+        next_meeting_time,
+        decision_signals,
+        risk_concerns,
+    )
+    intent_level = "high" if lead_score >= 75 else ("medium" if lead_score >= 60 else "low")
+    if intent_level == "low" and opportunity_stage == "初次接触":
         opportunity_stage = "初次接触"
 
     high_value_flag = (
