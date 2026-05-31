@@ -210,28 +210,7 @@ feishu_raw.json
 
 ---
 
-## 9. 注册 Skill（可选）
-
-如果你希望以后直接让龙虾按自然语言触发 CRM-Assistant，可以把仓库里的 Skill 注册到 OpenClaw：
-
-在飞书 DM 里发送：
-
-请将 CRM-Assistant 的 Skill 注册到 OpenClaw。
-
-请把 `/root/projects/CRM-Assistant/SKILL.md` 注册到 OpenClaw 的 skills 目录中，并在 OpenClaw 环境配置里设置 CRM_ASSISTANT_ROOT，指向 `/root/projects/CRM-Assistant`。
-
-完成后确认：
-1. CRM-Assistant 的 Skill 文件已在 OpenClaw skills 目录中
-2. OpenClaw 环境配置里已有 CRM_ASSISTANT_ROOT
-3. 之后可以用自然语言触发 CRM Assistant
-
-注册完成后，可以在飞书 DM 里试一句：
-
-请用 CRM Assistant 处理这份飞书会议原始数据，并生成客户信息表和商机推进快照表的写入结果。
-
----
-
-## 10. 验收检查清单
+## 9. 验收检查清单
 
 - [ ] 龙虾部署 CRM-Assistant 成功
 - [ ] `python scripts/crm_assistant.py --help` 能正常输出
@@ -247,7 +226,7 @@ feishu_raw.json
 
 ---
 
-## 11. 常见问题速查
+## 10. 常见问题速查
 
 | 龙虾报的错 | 原因 | 你发什么 |
 |---|---|---|
@@ -262,7 +241,7 @@ feishu_raw.json
 
 ---
 
-## 12. 一句话讲法
+## 11. 一句话讲法
 
 这节课就一条链路：
 
