@@ -137,30 +137,125 @@ def isoformat_or_none(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
 
 
-def get_business_value(text: str) -> str | None:
-    for pattern in [
-        r"预算大概在\s*(\d+)\s*到\s*(\d+)\s*万",
-        r"(\d+)\s*到\s*(\d+)\s*万",
-    ]:
-        match = re.search(pattern, text)
+def extract_business_value_meta(text: str) -> dict[str, Any] | None:
+    source_text = str(text or "")
+    if not source_text.strip():
+        return None
+
+    range_patterns = [
+        r"(预算大概在|预算在|金额在|价格在)?\s*(\d+)\s*(?:到|-|~|～)\s*(\d+)\s*[万wW]",
+    ]
+    upper_bound_patterns = [
+        r"(控制在|控制到|希望先控制在|尽量控制在|压在|不超过|最好压在|金额在|控制在预算内)\s*(\d+)\s*[万wW](?:以内|以下)?",
+        r"(\d+)\s*[万wW](?:以内|以下)",
+    ]
+    lower_bound_patterns = [
+        r"(不低于|至少|起步|不少于)\s*(\d+)\s*[万wW](?:以上)?",
+        r"(\d+)\s*[万wW](?:以上|起)",
+    ]
+    approx_patterns = [
+        r"(约|大概|差不多|大约|接近)\s*(\d+)\s*[万wW]",
+    ]
+    exact_patterns = [
+        r"(合同金额|签约金额|最终金额|成交金额)\D{0,12}(\d+)\s*[万wW]",
+        r"(金额|预算|价格)\D{0,12}(锁定在|锁定为|定在|定为|确定为)?\s*(\d+)\s*[万wW]",
+        r"(锁定在|锁定为|定在|定为|确定为|就是)\s*(\d+)\s*[万wW]",
+        r"(\d+)\s*[万wW]",
+    ]
+
+    for pattern in range_patterns:
+        match = re.search(pattern, source_text)
         if match:
-            return f"{match.group(1)}-{match.group(2)}万"
-    match = re.search(r"(\d+)\s*万以内", text)
-    if match:
-        return f"{match.group(1)}万以内"
-    match = re.search(r"金额在\s*(\d+)\s*万以内", text)
-    if match:
-        return f"{match.group(1)}万以内"
-    match = re.search(r"(控制在|控制到|希望先控制在|尽量控制在)\s*(\d+)\s*万以内", text)
-    if match:
-        return f"{match.group(2)}万以内"
-    match = re.search(r"合同金额\D{0,8}(\d+)\s*万", text)
-    if match:
-        return f"约 {match.group(1)} 万"
-    match = re.search(r"预算[^。；\n]{0,10}?(\d+)\s*万", text)
-    if match:
-        return f"约 {match.group(1)} 万"
+            groups = match.groups()
+            min_amount = int(groups[-2])
+            max_amount = int(groups[-1])
+            return {
+                "amount_type": "range",
+                "min_amount_wan": min_amount,
+                "max_amount_wan": max_amount,
+                "raw_expression": match.group(0),
+            }
+
+    for pattern in upper_bound_patterns:
+        match = re.search(pattern, source_text)
+        if match:
+            groups = match.groups()
+            amount = int(groups[-1])
+            return {
+                "amount_type": "upper_bound",
+                "min_amount_wan": None,
+                "max_amount_wan": amount,
+                "raw_expression": match.group(0),
+            }
+
+    for pattern in lower_bound_patterns:
+        match = re.search(pattern, source_text)
+        if match:
+            groups = match.groups()
+            amount = int(groups[-1])
+            return {
+                "amount_type": "lower_bound",
+                "min_amount_wan": amount,
+                "max_amount_wan": None,
+                "raw_expression": match.group(0),
+            }
+
+    for pattern in approx_patterns:
+        match = re.search(pattern, source_text)
+        if match:
+            groups = match.groups()
+            amount = int(groups[-1])
+            return {
+                "amount_type": "approx",
+                "min_amount_wan": amount,
+                "max_amount_wan": amount,
+                "raw_expression": match.group(0),
+            }
+
+    for pattern in exact_patterns:
+        match = re.search(pattern, source_text)
+        if match:
+            groups = match.groups()
+            amount = int(groups[-1])
+            return {
+                "amount_type": "exact",
+                "min_amount_wan": amount,
+                "max_amount_wan": amount,
+                "raw_expression": match.group(0),
+            }
+
+    budget_max = parse_budget_max(source_text)
+    if budget_max > 0:
+        return {
+            "amount_type": "approx",
+            "min_amount_wan": budget_max,
+            "max_amount_wan": budget_max,
+            "raw_expression": str(budget_max),
+        }
     return None
+
+
+def format_business_value(meta: dict[str, Any] | None) -> str | None:
+    if not meta:
+        return None
+    amount_type = str(meta.get("amount_type") or "").strip()
+    min_amount = meta.get("min_amount_wan")
+    max_amount = meta.get("max_amount_wan")
+    if amount_type == "range" and min_amount is not None and max_amount is not None:
+        return f"{min_amount}-{max_amount}万"
+    if amount_type == "upper_bound" and max_amount is not None:
+        return f"{max_amount}万以内"
+    if amount_type == "lower_bound" and min_amount is not None:
+        return f"{min_amount}万以上"
+    if amount_type == "exact" and min_amount is not None:
+        return f"{min_amount}万"
+    if amount_type == "approx" and min_amount is not None:
+        return f"约 {min_amount} 万"
+    return None
+
+
+def get_business_value(text: str) -> str | None:
+    return format_business_value(extract_business_value_meta(text))
 
 
 def get_business_value_or_default(text: str) -> str:
@@ -386,6 +481,216 @@ def get_transcript_text(raw: dict[str, Any]) -> str:
     if lines:
         return "\n".join(lines)
     raise ValueError("No transcript.full_text or transcript.segments found in raw input.")
+
+
+def parse_cn_datetime_text(text: str | None) -> datetime | None:
+    if text is None:
+        return None
+    value = str(text).strip()
+    if not value:
+        return None
+    match = re.search(r"(\d{4})-(\d{2})-(\d{2})\s*(上午|下午)?\s*(\d{1,2}):(\d{2})", value)
+    if match:
+        year, month, day = int(match.group(1)), int(match.group(2)), int(match.group(3))
+        meridiem = match.group(4) or ""
+        hour = int(match.group(5))
+        minute = int(match.group(6))
+        if meridiem == "下午" and hour < 12:
+            hour += 12
+        if meridiem == "上午" and hour == 12:
+            hour = 0
+        return datetime.fromisoformat(f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00+08:00")
+    return parse_datetime(value)
+
+
+def parse_cn_duration_to_minutes(text: str | None) -> int | None:
+    if text is None:
+        return None
+    value = str(text).strip()
+    if not value:
+        return None
+    hours = 0
+    minutes = 0
+    seconds = 0
+    hour_match = re.search(r"(\d+)\s*小时", value)
+    minute_match = re.search(r"(\d+)\s*分钟", value)
+    second_match = re.search(r"(\d+)\s*秒", value)
+    if hour_match:
+        hours = int(hour_match.group(1))
+    if minute_match:
+        minutes = int(minute_match.group(1))
+    if second_match:
+        seconds = int(second_match.group(1))
+    total_minutes = hours * 60 + minutes + (1 if seconds >= 30 else 0)
+    return total_minutes if total_minutes > 0 else None
+
+
+def parse_feishu_doc_meeting_markdown(doc_markdown: str, fallback_title: str | None = None, source_doc_url: str | None = None) -> dict[str, Any]:
+    text = str(doc_markdown or "").replace("\r\n", "\n")
+    lines = text.split("\n")
+
+    meeting_title = str(fallback_title or "飞书会议纪要").strip() or "飞书会议纪要"
+    start_time_text: str | None = None
+    duration_text: str | None = None
+    meeting_url: str | None = source_doc_url
+
+    participants: list[dict[str, Any]] = []
+    transcript_lines: list[str] = []
+    current_section: str | None = None
+    pending_speaker: str | None = None
+    pending_time_text: str | None = None
+
+    basic_info_map: OrderedDict[str, str] = OrderedDict()
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        if re.fullmatch(r"\*\*一、会议基本信息\*\*", line):
+            current_section = "basic_info"
+            continue
+        if re.fullmatch(r"\*\*二、参会人员\*\*", line):
+            current_section = "participants"
+            continue
+        if re.fullmatch(r"\*\*三、文字记录\*\*", line):
+            current_section = "transcript"
+            continue
+
+        if current_section == "basic_info":
+            bullet_match = re.match(r"-\s*\*\*(.+?)\*\*[:：]\s*(.+)$", line)
+            if bullet_match:
+                key = bullet_match.group(1).strip()
+                value = bullet_match.group(2).strip()
+                basic_info_map[key] = value
+                continue
+
+        if current_section == "participants":
+            participant_match = re.match(r"-\s*\*\*(.+?)\*\*[｜|](.+?)[｜|](.+?)[｜|](.+)$", line)
+            if participant_match:
+                participants.append({
+                    "user_id": None,
+                    "name": participant_match.group(1).strip(),
+                    "role": participant_match.group(2).strip(),
+                    "company": participant_match.group(3).strip(),
+                    "industry": participant_match.group(4).strip(),
+                })
+                continue
+
+        if current_section == "transcript":
+            speaker_match = re.match(r"^(.+?)\s+(上午|下午)\s*(\d{1,2}:\d{2})$", line)
+            if speaker_match:
+                pending_speaker = speaker_match.group(1).strip()
+                pending_time_text = f"{speaker_match.group(2)} {speaker_match.group(3)}"
+                continue
+            if pending_speaker and line:
+                transcript_lines.append(f"{pending_speaker}：{line}")
+                pending_speaker = None
+                pending_time_text = None
+                continue
+
+    if basic_info_map.get("会议主题"):
+        meeting_title = basic_info_map["会议主题"]
+    if basic_info_map.get("开始时间"):
+        start_time_text = basic_info_map["开始时间"]
+    if basic_info_map.get("会议链接"):
+        meeting_url = re.sub(r"^[\[]|[\)]$", "", basic_info_map["会议链接"]).strip()
+        md_link_match = re.search(r"\((https?://[^)]+)\)", basic_info_map["会议链接"])
+        if md_link_match:
+            meeting_url = md_link_match.group(1).strip()
+
+    start_dt = parse_cn_datetime_text(start_time_text)
+    end_dt: datetime | None = None
+    if basic_info_map.get("结束时间"):
+        end_dt = parse_cn_datetime_text(basic_info_map["结束时间"])
+    if end_dt is None and start_dt is not None:
+        duration_minutes = parse_cn_duration_to_minutes(duration_text)
+        if duration_minutes:
+            end_dt = start_dt + timedelta(minutes=duration_minutes)
+
+    company_name = basic_info_map.get("公司名称") or ""
+    customer_name = basic_info_map.get("客户名称") or ""
+    owner = basic_info_map.get("负责人") or ""
+    industry = basic_info_map.get("行业") or ""
+    customer_id = basic_info_map.get("客户 ID") or basic_info_map.get("客户ID") or ""
+    opportunity_id = basic_info_map.get("商机 ID") or basic_info_map.get("商机ID") or ""
+    sales_region = basic_info_map.get("销售区域") or ""
+    next_meeting_time_text = basic_info_map.get("下一次会议时间") or ""
+    next_meeting_dt = parse_cn_datetime_text(next_meeting_time_text)
+
+    if not participants:
+        participant_names = []
+        if owner:
+            participant_names.append(owner)
+        if customer_name and customer_name not in participant_names:
+            participant_names.append(customer_name)
+        participants = [{"user_id": None, "name": name, "role": "unknown", "company": company_name if name == customer_name else "", "industry": industry} for name in participant_names]
+
+    raw = OrderedDict([
+        ("source", "feishu_meeting_doc"),
+        ("meeting", OrderedDict([
+            ("meeting_id", f"doc_{re.sub(r'[^A-Za-z0-9]+', '_', meeting_title).strip('_') or 'meeting'}"),
+            ("title", meeting_title),
+            ("start_time", isoformat_or_none(start_dt)),
+            ("end_time", isoformat_or_none(end_dt)),
+            ("host_user_id", None),
+            ("meeting_url", meeting_url),
+            ("calendar_event_id", None),
+        ])),
+        ("participants", participants),
+        ("transcript", OrderedDict([
+            ("full_text", "\n".join(transcript_lines).strip()),
+        ])),
+        ("calendar", OrderedDict([
+            ("next_meeting_time", isoformat_or_none(next_meeting_dt)),
+        ])),
+        ("crm_binding", OrderedDict([
+            ("customer_id", customer_id or None),
+            ("customer_name", customer_name or None),
+            ("company_name", company_name or None),
+            ("owner", owner or None),
+            ("industry", industry or None),
+            ("opportunity_id", opportunity_id or None),
+            ("sales_region", sales_region or None),
+        ])),
+    ])
+    return raw
+
+
+def build_context_from_feishu_doc(doc_markdown_path: str | Path, output_dir: str | Path, raw_file_name: str = "feishu_meeting_raw.json", context_file_name: str = "context.json", transcript_file_name: str = "transcript.txt", source_doc_url: str | None = None, fallback_title: str | None = None) -> dict[str, Any]:
+    doc_text = read_text(doc_markdown_path)
+    raw = parse_feishu_doc_meeting_markdown(doc_text, fallback_title=fallback_title, source_doc_url=source_doc_url)
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    raw_path = output / raw_file_name
+    write_json(raw_path, raw)
+    build_result = build_context_from_feishu(raw_path, output, context_file_name, transcript_file_name)
+    result = OrderedDict([
+        ("doc_markdown_path", resolve_str(doc_markdown_path)),
+        ("raw_input_path", resolve_str(raw_path)),
+        ("generated_context", build_result.get("generated_context")),
+        ("generated_transcript", build_result.get("generated_transcript")),
+    ])
+    write_json(output / "build_from_doc_result.json", result)
+    return result
+
+
+def ingest_feishu_doc_to_bitable(doc_markdown_path: str | Path, output_dir: str | Path, source_doc_url: str | None = None, fallback_title: str | None = None) -> dict[str, Any]:
+    output = Path(output_dir)
+    build_output = output / "build"
+    process_output = output / "process"
+    build_result = build_context_from_feishu_doc(doc_markdown_path, build_output, source_doc_url=source_doc_url, fallback_title=fallback_title)
+    crm_packet = process_transcript(build_output / "transcript.txt", build_output / "context.json", process_output)
+    result = OrderedDict([
+        ("doc_markdown_path", resolve_str(doc_markdown_path)),
+        ("raw_input_path", resolve_str(build_output / "feishu_meeting_raw.json")),
+        ("context_path", resolve_str(build_output / "context.json")),
+        ("transcript_path", resolve_str(build_output / "transcript.txt")),
+        ("crm_packet_path", resolve_str(process_output / "crm_packet.json")),
+        ("customer_id", crm_packet["customer_table_row"].get("客户ID")),
+        ("opportunity_id", crm_packet["opportunity_snapshot_row"].get("商机ID")),
+    ])
+    write_json(output / "ingest_doc_result.json", result)
+    return result
 
 
 def extract_bitable_app_token(value: str | None) -> str | None:
@@ -800,6 +1105,33 @@ def get_first_participant_by_role(participants: list[dict[str, Any]], roles: lis
     return None
 
 
+def normalize_transcript_speakers(transcript_text: str, owner: Any = None, customer_name: Any = None) -> str:
+    text = str(transcript_text or "").strip()
+    if not text:
+        return text
+
+    owner_text = str(owner or "").strip()
+    customer_text = str(customer_name or "").strip()
+    normalized_lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = str(raw_line).strip()
+        if not line:
+            continue
+        speaker_match = re.match(r"^([^：:]+)[：:](.*)$", line)
+        if not speaker_match:
+            normalized_lines.append(line)
+            continue
+        speaker = speaker_match.group(1).strip()
+        content = speaker_match.group(2).strip()
+        normalized_speaker = speaker
+        if owner_text and speaker == owner_text:
+            normalized_speaker = "销售"
+        elif customer_text and speaker == customer_text:
+            normalized_speaker = "客户"
+        normalized_lines.append(f"{normalized_speaker}：{content}")
+    return "\n".join(normalized_lines)
+
+
 def build_context_from_feishu(raw_input_path: str | Path, output_dir: str | Path, context_file_name: str = "context.json", transcript_file_name: str = "transcript.txt") -> dict[str, Any]:
     raw = read_json(raw_input_path)
     participants = list(raw.get("participants") or [])
@@ -821,6 +1153,8 @@ def build_context_from_feishu(raw_input_path: str | Path, output_dir: str | Path
     industry = get_object_value(crm_binding, "industry")
     if industry is None and external_participant is not None:
         industry = external_participant.get("industry")
+
+    transcript_text = normalize_transcript_speakers(transcript_text, owner=owner, customer_name=customer_name)
 
     meeting = raw.get("meeting") or {}
     calendar = raw.get("calendar") or {}
@@ -1593,6 +1927,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--context-file-name", default="context.json")
     p.add_argument("--transcript-file-name", default="transcript.txt")
 
+    p = sub.add_parser("build-context-from-feishu-doc")
+    p.add_argument("--doc-markdown-path", required=True)
+    p.add_argument("--output-dir", required=True)
+    p.add_argument("--raw-file-name", default="feishu_meeting_raw.json")
+    p.add_argument("--context-file-name", default="context.json")
+    p.add_argument("--transcript-file-name", default="transcript.txt")
+    p.add_argument("--source-doc-url")
+    p.add_argument("--fallback-title")
+
     p = sub.add_parser("build-llm-prompt")
     p.add_argument("--transcript-path", required=True)
     p.add_argument("--context-path", required=True)
@@ -1648,6 +1991,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--customer-table-id")
     p.add_argument("--opportunity-table-id")
     p.add_argument("--dry-run", action="store_true")
+
+    p = sub.add_parser("ingest-feishu-doc-to-bitable")
+    p.add_argument("--doc-markdown-path", required=True)
+    p.add_argument("--output-dir", required=True)
+    p.add_argument("--source-doc-url")
+    p.add_argument("--fallback-title")
     return parser
 
 
@@ -1659,6 +2008,17 @@ def main() -> None:
     elif args.command == "build-context-from-feishu":
         build_context_from_feishu(args.raw_input_path, args.output_dir, args.context_file_name, args.transcript_file_name)
         print(f"Feishu raw input converted at: {args.output_dir}")
+    elif args.command == "build-context-from-feishu-doc":
+        build_context_from_feishu_doc(
+            args.doc_markdown_path,
+            args.output_dir,
+            args.raw_file_name,
+            args.context_file_name,
+            args.transcript_file_name,
+            args.source_doc_url,
+            args.fallback_title,
+        )
+        print(f"Feishu doc input converted at: {args.output_dir}")
     elif args.command == "build-llm-prompt":
         build_llm_prompt(args.transcript_path, args.context_path, args.output_dir, args.example_names)
         print(f"LLM prompt package generated at: {args.output_dir}")
@@ -1709,6 +2069,14 @@ def main() -> None:
             args.dry_run,
         )
         print(f"Feishu raw input fully ingested to bitable at: {args.output_dir}")
+    elif args.command == "ingest-feishu-doc-to-bitable":
+        ingest_feishu_doc_to_bitable(
+            args.doc_markdown_path,
+            args.output_dir,
+            args.source_doc_url,
+            args.fallback_title,
+        )
+        print(f"Feishu doc input fully converted at: {args.output_dir}")
 
 
 if __name__ == "__main__":

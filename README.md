@@ -271,6 +271,49 @@ python ./scripts/crm_assistant.py ingest-feishu-raw-to-bitable \
 
 ---
 
+## 6.3 方式三：从飞书文档纪要开始
+
+当上游输入已经不是 `feishu_meeting_raw.json`，而是一篇飞书会议纪要文档导出的 Markdown 文本（包含“会议基本信息 / 参会人员 / 文字记录”）时，可以先把文档解析回项目原始输入层。
+
+先提取标准化输入：
+
+```bash
+python ./scripts/crm_assistant.py build-context-from-feishu-doc \
+  --doc-markdown-path ./runtime/doc_ingest_probe/source_doc.md \
+  --output-dir ./runtime/doc_ingest_probe/build \
+  --source-doc-url https://www.feishu.cn/docx/your_doc_id \
+  --fallback-title "中国平安龙虾盒子售后协同需求梳理会"
+```
+
+再进入主处理：
+
+```bash
+python ./scripts/crm_assistant.py process-transcript \
+  --transcript-path ./runtime/doc_ingest_probe/build/transcript.txt \
+  --context-path ./runtime/doc_ingest_probe/build/context.json \
+  --output-dir ./runtime/doc_ingest_probe/process
+```
+
+如果只想一条命令直接把飞书文档转成 CRM 结构化结果：
+
+```bash
+python ./scripts/crm_assistant.py ingest-feishu-doc-to-bitable \
+  --doc-markdown-path ./runtime/doc_ingest_probe/source_doc.md \
+  --output-dir ./runtime/doc_ingest_probe/out \
+  --source-doc-url https://www.feishu.cn/docx/your_doc_id \
+  --fallback-title "中国平安龙虾盒子售后协同需求梳理会"
+```
+
+这条命令当前会自动完成：
+- 从飞书文档 Markdown 解析 `feishu_meeting_raw.json`
+- 生成 `context.json`
+- 生成 `transcript.txt`
+- 生成 `crm_packet.json` 及其它 process 产物
+
+> 注意：`ingest-feishu-doc-to-bitable` 当前名字沿用了既有命名风格，但此实现阶段只做本地转换，不执行飞书写表。
+
+---
+
 ## 6.3 方式三：生成标准 LLM Prompt 包
 
 ```bash

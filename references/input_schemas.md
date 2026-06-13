@@ -119,3 +119,34 @@ feishu_meeting_raw.json
 - 飞书提供会议事实和转录文本
 - CRM / 多维表格提供客户和商机上下文
 - 项目把两者合并成稳定的内部输入格式
+
+## 3. 飞书文档纪要输入层
+
+当上游输入不再是 `feishu_meeting_raw.json`，而是已经整理好的飞书云文档 Markdown（例如包含“**一、会议基本信息** / **二、参会人员** / **三、文字记录**”三段）时，项目支持先解析文档，再回落到原有原始输入结构。
+
+推荐命令：
+
+```bash
+python scripts/crm_assistant.py build-context-from-feishu-doc \
+  --doc-markdown-path runtime/doc_ingest_probe/source_doc.md \
+  --output-dir runtime/doc_ingest_probe/out/build \
+  --source-doc-url https://www.feishu.cn/docx/xxx \
+  --fallback-title "中国平安龙虾盒子售后协同需求梳理会"
+```
+
+转换关系：
+
+```text
+feishu_doc_markdown.md
+  -> feishu_meeting_raw.json
+  -> transcript.txt
+  -> context.json
+  -> process-transcript
+```
+
+其中：
+
+- `会议基本信息` 区提供客户/商机/会议元信息
+- `参会人员` 区提供参与人列表
+- `文字记录` 区按“人名 时间” + 下一行正文的格式抽取转写内容
+- 输出的 `feishu_meeting_raw.json` 会尽量兼容原有 `build-context-from-feishu` 入口
