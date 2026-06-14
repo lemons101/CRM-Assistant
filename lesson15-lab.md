@@ -141,10 +141,10 @@ FEISHU_OPPORTUNITY_TABLE_ID=tblxxxxxxxx
 要求：
 1. 进入 CRM Assistant 项目根目录
 2. 使用这份测试文档：
-   assets/meeting_docs/中国平安龙虾盒子售后协同需求梳理会.docx
+   assets/meeting_docs/中国平安龙虾盒子需求梳理会.docx
 3. 执行 ingest-docx-to-bitable
 4. 使用 .env.local
-5. 加上 --sync-feishu 和 --dry-run
+5. 加上 --dry-run
 6. 输出目录放到 runtime/lab15_docx_dry
 
 完成后告诉我：
