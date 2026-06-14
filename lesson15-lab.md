@@ -174,10 +174,9 @@ dry-run 正常后，再真实写表：
    assets/meeting_docs/中国平安龙虾盒子需求梳理会.docx
 3. 执行 ingest-docx-to-bitable
 4. 使用 .env.local
-5. 加上 --sync-feishu
-6. 不要加 --dry-run
-7. 写入飞书时使用用户侧权限，不要用无写权限的 app/bot 身份硬写
-8. 输出目录放到 runtime/lab15_docx_write
+5. 不要加 --dry-run
+6. 写入飞书时使用用户侧权限，不要用无写权限的 app/bot 身份硬写
+7. 输出目录放到 runtime/lab15_docx_write
 
 完成后告诉我：
 1. 是否写入成功
@@ -207,9 +206,8 @@ dry-run 正常后，再真实写表：
    assets/meeting_docs/中国平安龙虾盒子方案沟通会.docx
 3. 执行 ingest-docx-to-bitable
 4. 使用 .env.local
-5. 加上 --sync-feishu
-6. 写入飞书时继续使用用户侧权限
-7. 输出目录放到 runtime/lab15_docx_write_round2
+5. 写入飞书时继续使用用户侧权限
+6. 输出目录放到 runtime/lab15_docx_write_round2
 
 完成后告诉我：
 1. 是否写入成功
