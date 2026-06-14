@@ -15,9 +15,14 @@ Thumbs.db
 runtime/**
 !runtime/.gitkeep
 
+# Raw / local data
+assets/feishu_raw/
+
 # Optional local environment files
 .env
 .env.*
 
+# Python virtualenv / local config
 .venv/
+venv/
 feishu_config.json
