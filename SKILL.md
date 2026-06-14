@@ -104,6 +104,10 @@ python ./scripts/crm_assistant.py run-sample-tests
 python ./scripts/crm_assistant.py run-feishu-pipeline-tests
 ```
 
+补充：
+- 当前仓库默认不保留 `assets/samples/`，因此 `run-sample-tests` 无样本时会直接跳过
+- 如果要跑真实样本回归，请先补回脱敏样本与断言文件
+
 ## 输出要求
 优先保证：
 - 中文业务摘要短而准

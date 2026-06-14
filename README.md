@@ -214,7 +214,7 @@ python ./scripts/crm_assistant.py process-transcript \
 - DOCX 直连入口已经可用
 - 飞书字段类型转换已经补齐（日期/时间会转毫秒时间戳）
 - Customers 的弱值保护与合并规则已经补齐
-- 如果需要“命中已有飞书记录后优先继承正式客户ID / 商机ID”，这是一个仍值得继续加强的点
+- Customers 当前已经改为：优先按 `客户ID` 命中已有飞书记录；若缺少正式 ID，再回退到 `客户名称 + 客户公司`
 - 如果当前执行环境没有 Feishu app 凭据，CLI 侧的 `--sync-feishu` 可能会因缺少凭据而失败；这种情况下需要由具备飞书工具能力的一侧继续写表
 
 ---
@@ -228,3 +228,7 @@ python ./scripts/crm_assistant.py --help
 python ./scripts/crm_assistant.py run-sample-tests
 python ./scripts/crm_assistant.py run-feishu-pipeline-tests
 ```
+
+说明：
+- 当前仓库默认不再保留 `assets/samples/`，所以 `run-sample-tests` 在无样本时会跳过而不是报错
+- 若需要真正执行样本回归，请先自行补回脱敏样本与对应断言文件
