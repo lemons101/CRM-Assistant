@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
+from xml.etree import ElementTree as ET
+from zipfile import ZipFile
 
 
 VALID_INTENT_LEVELS = ["low", "medium", "high"]
@@ -676,6 +678,24 @@ def parse_feishu_doc_meeting_markdown(doc_markdown: str, fallback_title: str | N
     return raw
 
 
+def extract_docx_text(docx_path: str | Path) -> str:
+    path = Path(docx_path)
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    with ZipFile(path) as archive:
+        data = archive.read("word/document.xml")
+    root = ET.fromstring(data)
+    paragraphs: list[str] = []
+    for paragraph in root.findall(".//w:p", ns):
+        parts: list[str] = []
+        for text_node in paragraph.findall(".//w:t", ns):
+            if text_node.text:
+                parts.append(text_node.text)
+        text = "".join(parts).strip()
+        if text:
+            paragraphs.append(text)
+    return "\n".join(paragraphs)
+
+
 def build_context_from_feishu_doc(doc_markdown_path: str | Path, output_dir: str | Path, raw_file_name: str = "feishu_meeting_raw.json", context_file_name: str = "context.json", transcript_file_name: str = "transcript.txt", source_doc_url: str | None = None, fallback_title: str | None = None) -> dict[str, Any]:
     doc_text = read_text(doc_markdown_path)
     raw = parse_feishu_doc_meeting_markdown(doc_text, fallback_title=fallback_title, source_doc_url=source_doc_url)
@@ -739,6 +759,44 @@ def ingest_feishu_doc_to_bitable(
         result["customer_action"] = sync_result.get("customer_action")
         result["opportunity_action"] = sync_result.get("opportunity_action")
     write_json(output / "ingest_doc_result.json", result)
+    return result
+
+
+def ingest_docx_to_bitable(
+    docx_path: str | Path,
+    output_dir: str | Path,
+    source_doc_url: str | None = None,
+    fallback_title: str | None = None,
+    config_path: str | Path | None = None,
+    app_id: str | None = None,
+    app_secret: str | None = None,
+    app_token_or_url: str | None = None,
+    customer_table_id: str | None = None,
+    opportunity_table_id: str | None = None,
+    dry_run: bool = False,
+    sync_feishu: bool = False,
+) -> dict[str, Any]:
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    extracted_markdown_path = output / "source_doc.md"
+    extracted_markdown_path.write_text(extract_docx_text(docx_path), encoding="utf-8-sig")
+    result = ingest_feishu_doc_to_bitable(
+        extracted_markdown_path,
+        output,
+        source_doc_url,
+        fallback_title,
+        config_path,
+        app_id,
+        app_secret,
+        app_token_or_url,
+        customer_table_id,
+        opportunity_table_id,
+        dry_run,
+        sync_feishu,
+    )
+    result["docx_path"] = resolve_str(docx_path)
+    result["extracted_doc_markdown_path"] = resolve_str(extracted_markdown_path)
+    write_json(output / "ingest_docx_result.json", result)
     return result
 
 
@@ -1212,27 +1270,9 @@ def sync_crm_packet_to_feishu(
                     [{"fields": coerced_row}],
                     access_token,
                 )
-                 customer_actions.append("created")
-                 customer_responses.append(customer_response)
--                effective_customer_rows.append(row)
-+                effective_customer_rows.append(coerced_row)
-                 customer_preserved_fields_map[f"{row_name}||{row_company or ''}"] = []
-             else:
-                 effective_customer_row, preserved_fields = merge_row_preserving_existing_values(row, existing_record.get("fields") or {})
-                 effective_customer_row["客户画像摘要"] = build_customer_profile_summary(
-                     effective_customer_row.get("客户名称"),
-@@
--                customer_response = batch_update_feishu_bitable_records(
-+                effective_customer_row = coerce_row_for_bitable(effective_customer_row, customer_fields_meta)
-+                customer_response = batch_update_feishu_bitable_records(
-                     resolved_app_token,
-                     str(resolved_customer_table_id),
-                     [{"record_id": existing_record["record_id"], "fields": effective_customer_row}],
-                     access_token,
-                 )
                 customer_actions.append("created")
                 customer_responses.append(customer_response)
-                effective_customer_rows.append(row)
+                effective_customer_rows.append(coerced_row)
                 customer_preserved_fields_map[f"{row_name}||{row_company or ''}"] = []
             else:
                 effective_customer_row, preserved_fields = merge_row_preserving_existing_values(row, existing_record.get("fields") or {})
@@ -1246,6 +1286,7 @@ def sync_crm_packet_to_feishu(
                     effective_customer_row.get("价格敏感程度"),
                     effective_customer_row.get("风险顾虑"),
                 )
+                effective_customer_row = coerce_row_for_bitable(effective_customer_row, customer_fields_meta)
                 customer_response = batch_update_feishu_bitable_records(
                     resolved_app_token,
                     str(resolved_customer_table_id),
@@ -1284,29 +1325,17 @@ def sync_crm_packet_to_feishu(
                 [{"fields": coerced_opportunity_row}],
                 access_token,
             )
-            report["opportunity_row_fields"] = coerced_opportunity_row
-             report["opportunity_action"] = "created"
-         else:
-             opportunity_response = batch_update_feishu_bitable_records(
-                 resolved_app_token,
-                 str(resolved_opportunity_table_id),
--                [{"record_id": existing_opportunity_record["record_id"], "fields": opportunity_row}],
-+                [{"record_id": existing_opportunity_record["record_id"], "fields": coerced_opportunity_row}],
-                 access_token,
-             )
-+            report["opportunity_row_fields"] = coerced_opportunity_row
-             report["opportunity_action"] = "updated"
-             report["opportunity_record_id"] = existing_opportunity_record.get("record_id")
             report["opportunity_action"] = "created"
         else:
             opportunity_response = batch_update_feishu_bitable_records(
                 resolved_app_token,
                 str(resolved_opportunity_table_id),
-                [{"record_id": existing_opportunity_record["record_id"], "fields": opportunity_row}],
+                [{"record_id": existing_opportunity_record["record_id"], "fields": coerced_opportunity_row}],
                 access_token,
             )
             report["opportunity_action"] = "updated"
             report["opportunity_record_id"] = existing_opportunity_record.get("record_id")
+        report["opportunity_row_fields"] = coerced_opportunity_row
         report["opportunity_response"] = opportunity_response
 
     output = Path(output_dir)
@@ -2475,6 +2504,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--source-doc-url")
     p.add_argument("--fallback-title")
 
+    p = sub.add_parser("ingest-docx-to-bitable")
+    p.add_argument("--docx-path", required=True)
+    p.add_argument("--output-dir", required=True)
+    p.add_argument("--source-doc-url")
+    p.add_argument("--fallback-title")
+    p.add_argument("--config-path")
+    p.add_argument("--app-id")
+    p.add_argument("--app-secret")
+    p.add_argument("--app-token-or-url")
+    p.add_argument("--customer-table-id")
+    p.add_argument("--opportunity-table-id")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--sync-feishu", action="store_true")
+
     p = sub.add_parser("build-llm-prompt")
     p.add_argument("--transcript-path", required=True)
     p.add_argument("--context-path", required=True)
@@ -2566,6 +2609,22 @@ def main() -> None:
             args.fallback_title,
         )
         print(f"Feishu doc input converted at: {args.output_dir}")
+    elif args.command == "ingest-docx-to-bitable":
+        ingest_docx_to_bitable(
+            args.docx_path,
+            args.output_dir,
+            args.source_doc_url,
+            args.fallback_title,
+            args.config_path,
+            args.app_id,
+            args.app_secret,
+            args.app_token_or_url,
+            args.customer_table_id,
+            args.opportunity_table_id,
+            args.dry_run,
+            args.sync_feishu,
+        )
+        print(f"DOCX input fully converted at: {args.output_dir}")
     elif args.command == "build-llm-prompt":
         build_llm_prompt(args.transcript_path, args.context_path, args.output_dir, args.example_names)
         print(f"LLM prompt package generated at: {args.output_dir}")
