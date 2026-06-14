@@ -1046,12 +1046,32 @@ def is_weak_field_value(value: Any) -> bool:
     return False
 
 
+def merge_multi_value_text(current_value: Any, existing_value: Any) -> str:
+    def split_values(value: Any) -> list[str]:
+        text = str(value or "").strip()
+        if not text:
+            return []
+        return [item.strip() for item in re.split(r"[；;、,，]", text) if item.strip()]
+
+    values: list[str] = []
+    seen: set[str] = set()
+    for item in split_values(existing_value) + split_values(current_value):
+        if item not in seen:
+            seen.add(item)
+            values.append(item)
+    return "；".join(values)
+
+
 def merge_row_preserving_existing_values(current_row: OrderedDict[str, Any], existing_fields: dict[str, Any] | None) -> tuple[OrderedDict[str, Any], list[str]]:
     merged = OrderedDict()
     preserved_fields: list[str] = []
     existing = existing_fields or {}
+    merge_fields = {"沟通风格", "风险顾虑"}
     for field_name, current_value in current_row.items():
         existing_value = existing.get(field_name)
+        if field_name in merge_fields and not is_weak_field_value(existing_value) and not is_weak_field_value(current_value):
+            merged[field_name] = merge_multi_value_text(current_value, existing_value)
+            continue
         if is_weak_field_value(current_value) and not is_weak_field_value(existing_value):
             merged[field_name] = existing_value
             preserved_fields.append(field_name)
