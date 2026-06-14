@@ -299,16 +299,46 @@ def clean_opportunity_theme(raw_title: str, company_name: Any = None, customer_n
         if text:
             title = title.replace(text, "")
     title = re.sub(r"[（(][^)）]*[)）]", "", title)
-    title = re.sub(r"(方案)?沟通会$", "", title)
-    title = re.sub(r"分享会$", "分享", title)
-    title = re.sub(r"培训会$", "培训", title)
-    title = re.sub(r"交流会$", "交流", title)
-    title = re.sub(r"评审会$", "评审", title)
-    title = re.sub(r"启动会$", "启动", title)
-    title = re.sub(r"讨论会$", "讨论", title)
-    title = re.sub(r"会议$", "", title)
     title = re.sub(r"\s+", "", title)
     title = re.sub(r"^[：:·\-—_]+|[：:·\-—_]+$", "", title)
+
+    # Opportunity identity should be project-level, not meeting-stage-level.
+    # E.g. “中国平安龙虾盒子需求梳理会” and “中国平安龙虾盒子方案沟通会”
+    # should both normalize to “龙虾盒子”, so they share the same opportunity_id
+    # while still producing separate stage snapshots.
+    stage_suffixes = [
+        "项目签约完成与启动确认会",
+        "签约完成与启动确认会",
+        "售后协同项目签约完成与启动确认会",
+        "项目启动确认会",
+        "签约前确认会",
+        "内部推进会",
+        "方案沟通会",
+        "需求梳理会",
+        "需求确认会",
+        "初步了解会",
+        "启动确认会",
+        "推进会",
+        "确认会",
+        "沟通会",
+        "讨论会",
+        "评审会",
+        "交流会",
+        "培训会",
+        "分享会",
+        "启动会",
+        "会议",
+        "会",
+    ]
+    changed = True
+    while changed and title:
+        changed = False
+        for suffix in stage_suffixes:
+            if title.endswith(suffix) and len(title) > len(suffix):
+                title = title[: -len(suffix)]
+                title = re.sub(r"^[：:·\-—_]+|[：:·\-—_]+$", "", title)
+                changed = True
+                break
     return title.strip()
 
 
@@ -2485,11 +2515,22 @@ def run_merge_policy_tests() -> None:
     for field_name in ["是否单身", "MBTI", "价格敏感程度"]:
         if field_name not in preserved_fields:
             errors.append(f"{field_name} should be marked as preserved")
+    theme_round1 = infer_opportunity_theme("中国平安龙虾盒子需求梳理会", "", "中国平安", "张琪、李昊")
+    theme_round2 = infer_opportunity_theme("中国平安龙虾盒子方案沟通会", "", "中国平安", "张琪、李昊、王拓")
+    opportunity_id_round1 = stable_crm_id("O", "中国平安", theme_round1)
+    opportunity_id_round2 = stable_crm_id("O", "中国平安", theme_round2)
+    if theme_round1 != "龙虾盒子":
+        errors.append(f"round1 theme expected [龙虾盒子] actual [{theme_round1}]")
+    if theme_round2 != "龙虾盒子":
+        errors.append(f"round2 theme expected [龙虾盒子] actual [{theme_round2}]")
+    if opportunity_id_round1 != opportunity_id_round2:
+        errors.append(f"opportunity IDs should match for same project stages: {opportunity_id_round1} vs {opportunity_id_round2}")
     if errors:
         for error_item in errors:
             print(f"[FAIL] {error_item}")
         raise RuntimeError(f"{len(errors)} merge policy assertion(s) failed.")
     print("[PASS] merge policy preserves explicit customer fields and accepts explicit updates")
+    print("[PASS] opportunity identity is stable across meeting-stage titles")
 
 
 def run_model_output_tests(output_root: str | Path) -> None:
