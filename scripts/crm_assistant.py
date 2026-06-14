@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -38,6 +39,15 @@ def write_json(path: str | Path, value: Any) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8-sig")
+
+
+def stable_crm_id(prefix: str, *parts: Any) -> str:
+    normalized_parts = [str(part or "").strip() for part in parts if str(part or "").strip()]
+    payload = "||".join(normalized_parts)
+    if not payload:
+        payload = prefix
+    digest = hashlib.sha1(payload.encode("utf-8")).hexdigest()[:10].upper()
+    return f"{prefix}-{digest}"
 
 
 def get_object_value(obj: Any, property_name: str, default: Any = None) -> Any:
@@ -947,6 +957,30 @@ def build_customer_profile_summary(
     )
 
 
+def normalize_feishu_field_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if text is not None:
+                    normalized = str(text).strip()
+                    if normalized:
+                        parts.append(normalized)
+                        continue
+            normalized = str(item).strip()
+            if normalized:
+                parts.append(normalized)
+        return "".join(parts).strip()
+    if isinstance(value, dict):
+        text = value.get("text")
+        if text is not None:
+            return str(text).strip()
+    return str(value).strip()
+
+
 def find_feishu_record_by_field(records: list[dict[str, Any]], field_name: str, expected_value: Any) -> dict[str, Any] | None:
     if expected_value is None:
         return None
@@ -955,14 +989,8 @@ def find_feishu_record_by_field(records: list[dict[str, Any]], field_name: str, 
         return None
     for record in records:
         fields = record.get("fields") or {}
-        actual_value = fields.get(field_name)
-        if actual_value is None:
-            continue
-        if isinstance(actual_value, list):
-            values = [str(item).strip() for item in actual_value if str(item).strip()]
-            if expected_text in values:
-                return record
-        elif str(actual_value).strip() == expected_text:
+        actual_text = normalize_feishu_field_value(fields.get(field_name))
+        if actual_text == expected_text:
             return record
     return None
 
@@ -974,9 +1002,28 @@ def find_feishu_record_by_customer_identity(records: list[dict[str, Any]], custo
         return None
     for record in records:
         fields = record.get("fields") or {}
-        actual_name = str(fields.get("客户名称") or "").strip()
-        actual_company = str(fields.get("客户公司") or "").strip()
+        actual_name = normalize_feishu_field_value(fields.get("客户名称"))
+        actual_company = normalize_feishu_field_value(fields.get("客户公司"))
         if actual_name == expected_name and actual_company == expected_company:
+            return record
+    return None
+
+
+def find_feishu_record_by_opportunity_identity(records: list[dict[str, Any]], opportunity_id: Any, opportunity_name: Any, customer_company: Any = None) -> dict[str, Any] | None:
+    expected_id = str(opportunity_id or "").strip()
+    expected_name = str(opportunity_name or "").strip()
+    expected_company = str(customer_company or "").strip()
+    if expected_id:
+        matched = find_feishu_record_by_field(records, "商机ID", expected_id)
+        if matched is not None:
+            return matched
+    if not expected_name:
+        return None
+    for record in records:
+        fields = record.get("fields") or {}
+        actual_name = normalize_feishu_field_value(fields.get("机会名称"))
+        actual_company = normalize_feishu_field_value(fields.get("客户公司"))
+        if actual_name == expected_name and (not expected_company or actual_company == expected_company):
             return record
     return None
 
@@ -1133,13 +1180,30 @@ def sync_crm_packet_to_feishu(
         report["customer_response"] = customer_responses[0] if len(customer_responses) == 1 else customer_responses
         report["customer_responses"] = customer_responses
 
-        opportunity_response = batch_create_feishu_bitable_records(
-            resolved_app_token,
-            str(resolved_opportunity_table_id),
-            [{"fields": opportunity_row}],
-            access_token,
+        existing_opportunity_records = list_feishu_bitable_records(resolved_app_token, str(resolved_opportunity_table_id), access_token)
+        existing_opportunity_record = find_feishu_record_by_opportunity_identity(
+            existing_opportunity_records,
+            opportunity_row.get("商机ID"),
+            opportunity_row.get("机会名称"),
+            opportunity_row.get("客户公司"),
         )
-        report["opportunity_action"] = "appended"
+        if existing_opportunity_record is None:
+            opportunity_response = batch_create_feishu_bitable_records(
+                resolved_app_token,
+                str(resolved_opportunity_table_id),
+                [{"fields": opportunity_row}],
+                access_token,
+            )
+            report["opportunity_action"] = "created"
+        else:
+            opportunity_response = batch_update_feishu_bitable_records(
+                resolved_app_token,
+                str(resolved_opportunity_table_id),
+                [{"record_id": existing_opportunity_record["record_id"], "fields": opportunity_row}],
+                access_token,
+            )
+            report["opportunity_action"] = "updated"
+            report["opportunity_record_id"] = existing_opportunity_record.get("record_id")
         report["opportunity_response"] = opportunity_response
 
     output = Path(output_dir)
@@ -1565,6 +1629,7 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         contact_lines_map[fallback_name] = customer_lines[:]
 
     aggregated_contact_names = "、".join(external_names) if external_names else str(get_object_value(context, "customer_name") or "客户")
+    shared_customer_id = str(get_object_value(context, "customer_id") or "").strip() or None
     need_summaries = build_need_summary(need_lines, business_value=business_value)
     concern_summaries = build_concern_summary(concern_lines, risk_concerns)
     next_step_summaries = build_next_step_summary(next_action_lines, opportunity_stage)
@@ -1630,6 +1695,7 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         contact_name = str(contact.get("name") or "").strip() or f"联系人{index + 1}"
         contact_company = str(contact.get("company") or company_name or "").strip() or company_name
         contact_industry = str(contact.get("industry") or industry_name or "").strip() or industry_name
+        contact_role = str(contact.get("role") or "").strip()
         scoped_lines = contact_lines_map.get(contact_name, customer_lines)
         scoped_text = " ".join(scoped_lines) if scoped_lines else customer_text
         scoped_mbti = infer_mbti(scoped_text or all_text)
@@ -1648,8 +1714,9 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
             scoped_price_sensitivity,
             join_values(scoped_risk_concerns, "暂无明显风险顾虑"),
         )
+        resolved_customer_id = shared_customer_id or stable_crm_id("C", contact_company, contact_name)
         profile_update = OrderedDict([
-            ("customer_id", get_object_value(context, "customer_id")),
+            ("customer_id", resolved_customer_id),
             ("customer_name", contact_name),
             ("company_name", contact_company),
             ("industry", contact_industry),
@@ -1668,9 +1735,10 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
             composite_key = f"{contact_name}||{contact_company or ''}"
             row_existing_fields = existing_customer_fields.get(composite_key) or existing_customer_fields.get(contact_name) or {}
         customer_table_row = OrderedDict([
-            ("客户ID", get_object_value(context, "customer_id")),
+            ("客户ID", resolved_customer_id),
             ("客户名称", contact_name),
             ("客户公司", contact_company),
+            ("职务", contact_role),
             ("行业", contact_industry),
             ("MBTI", profile_update["mbti"]),
             ("是否单身", profile_update["single_status"]),
@@ -1729,8 +1797,9 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
 
     opening_script = f"{opening_focus_sentence}{opening_concern_sentence}{opening_next_sentence}"
 
+    resolved_opportunity_id = str(get_object_value(context, "opportunity_id") or "").strip() or stable_crm_id("O", company_name, opportunity_name)
     opportunity_update = OrderedDict([
-        ("opportunity_id", get_object_value(context, "opportunity_id")),
+        ("opportunity_id", resolved_opportunity_id),
         ("opportunity_name", opportunity_name),
         ("opportunity_description", opportunity_description),
         ("sales_region", sales_region),
@@ -1761,8 +1830,8 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         ("materials_to_prepare", ["客户画像摘要", "上次会议结论", "与本次需求对应的方案/案例/报价材料"]),
     ])
     opportunity_snapshot_row = OrderedDict([
-        ("商机ID", get_object_value(context, "opportunity_id")),
-        ("客户ID", get_object_value(context, "customer_id")),
+        ("商机ID", resolved_opportunity_id),
+        ("客户ID", join_values([row.get("客户ID") for row in customer_table_rows if row.get("客户ID")], "")),
         ("客户名称", aggregated_contact_names),
         ("客户公司", company_name),
         ("机会名称", opportunity_update["opportunity_name"]),
