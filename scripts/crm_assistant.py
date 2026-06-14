@@ -1827,7 +1827,10 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         company_name,
         aggregated_contact_names,
     )
-    opportunity_name = f"{aggregated_contact_names} - {opportunity_theme}"
+    if company_name:
+        opportunity_name = f"{company_name} - {opportunity_theme}"
+    else:
+        opportunity_name = opportunity_theme
     opportunity_description = {
         "已成交": "客户已完成合同签署或成交确认，当前重点已转向项目启动、交付排期与阶段验收。",
         "待成交": "客户已进入合同/定稿推进阶段，重点是锁定签约前材料与排期。",
@@ -1969,7 +1972,7 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
 
     opening_script = f"{opening_focus_sentence}{opening_concern_sentence}{opening_next_sentence}"
 
-    resolved_opportunity_id = str(get_object_value(context, "opportunity_id") or "").strip() or stable_crm_id("O", company_name, opportunity_name)
+    resolved_opportunity_id = str(get_object_value(context, "opportunity_id") or "").strip() or stable_crm_id("O", company_name, opportunity_theme)
     opportunity_update = OrderedDict([
         ("opportunity_id", resolved_opportunity_id),
         ("opportunity_name", opportunity_name),
