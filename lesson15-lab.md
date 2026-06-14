@@ -171,7 +171,7 @@ dry-run 正常后，再真实写表：
 要求：
 1. 进入 CRM Assistant 项目根目录
 2. 使用这份测试文档：
-   assets/meeting_docs/中国平安龙虾盒子售后协同需求梳理会.docx
+   assets/meeting_docs/中国平安龙虾盒子需求梳理会.docx
 3. 执行 ingest-docx-to-bitable
 4. 使用 .env.local
 5. 加上 --sync-feishu
@@ -204,7 +204,7 @@ dry-run 正常后，再真实写表：
 要求：
 1. 进入 CRM Assistant 项目根目录
 2. 使用这份测试文档：
-   assets/meeting_docs/中国平安龙虾盒子售后协同需求梳理会.docx
+   assets/meeting_docs/中国平安龙虾盒子方案沟通会.docx
 3. 执行 ingest-docx-to-bitable
 4. 使用 .env.local
 5. 加上 --sync-feishu
