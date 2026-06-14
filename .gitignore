@@ -18,3 +18,6 @@ runtime/**
 # Optional local environment files
 .env
 .env.*
+
+.venv/
+feishu_config.json
