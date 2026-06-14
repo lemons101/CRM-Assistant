@@ -21,6 +21,7 @@ assets/feishu_raw/
 # Optional local environment files
 .env
 .env.*
+!.env.example
 
 # Python virtualenv / local config
 .venv/

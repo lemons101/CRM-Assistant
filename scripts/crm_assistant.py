@@ -23,6 +23,21 @@ def skill_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def load_env_file(path: str | Path | None = None) -> None:
+    target = Path(path) if path else skill_root() / ".env.local"
+    if not target.exists():
+        return
+    for raw_line in target.read_text(encoding="utf-8-sig").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
 def read_text(path: str | Path) -> str:
     return Path(path).read_text(encoding="utf-8-sig")
 
@@ -1192,11 +1207,20 @@ def find_feishu_record_by_opportunity_identity(records: list[dict[str, Any]], op
     return None
 
 
-def inspect_feishu_bitable(app_id: str, app_secret: str, app_token_or_url: str, output_dir: str | Path, table_id: str | None = None) -> dict[str, Any]:
-    app_token = extract_bitable_app_token(app_token_or_url)
+def inspect_feishu_bitable(app_id: str | None, app_secret: str | None, app_token_or_url: str | None, output_dir: str | Path, table_id: str | None = None) -> dict[str, Any]:
+    resolved_app_id = app_id or os.getenv("FEISHU_APP_ID")
+    resolved_app_secret = app_secret or os.getenv("FEISHU_APP_SECRET")
+    resolved_app_token_source = (
+        app_token_or_url
+        or os.getenv("FEISHU_BITABLE_APP_TOKEN")
+        or os.getenv("FEISHU_BITABLE_URL")
+    )
+    if not resolved_app_id or not resolved_app_secret:
+        raise ValueError("Missing Feishu app credentials. Provide --app-id/--app-secret or FEISHU_APP_ID/FEISHU_APP_SECRET.")
+    app_token = extract_bitable_app_token(resolved_app_token_source)
     if app_token is None:
-        raise ValueError("Unable to parse Feishu bitable app token from --app-token-or-url.")
-    access_token = get_feishu_tenant_access_token(app_id, app_secret)
+        raise ValueError("Unable to parse Feishu bitable app token from --app-token-or-url, FEISHU_BITABLE_APP_TOKEN, or FEISHU_BITABLE_URL.")
+    access_token = get_feishu_tenant_access_token(resolved_app_id, resolved_app_secret)
     tables = list_feishu_bitable_tables(app_token, access_token)
     result: OrderedDict[str, Any] = OrderedDict([
         ("app_token", app_token),
@@ -2592,7 +2616,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("inspect-feishu-bitable")
     p.add_argument("--app-id")
     p.add_argument("--app-secret")
-    p.add_argument("--app-token-or-url", required=True)
+    p.add_argument("--app-token-or-url")
     p.add_argument("--output-dir", required=True)
     p.add_argument("--table-id")
 
@@ -2635,6 +2659,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    load_env_file()
     args = build_parser().parse_args()
     if args.command == "process-transcript":
         process_transcript(args.transcript_path, args.context_path, args.output_dir)

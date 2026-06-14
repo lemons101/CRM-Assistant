@@ -1,399 +1,267 @@
-# 第 15 节实验手册：CRM Assistant 会议商机推进与飞书落表
+# 第 15 节实验手册：让每一场高价值会议，自动沉淀为可经营的 CRM 资产
 
 > 配套课程：AI 业务流架构师 · 第 15 节《CRM Assistant 会议商机推进与飞书落表》
-> 预计耗时：45-75 分钟
-> 操作方式：可在飞书 DM 中让助手代执行，也可以在服务器命令行手动执行
-> 前置条件：OpenClaw 已部署、CRM-Assistant 已拉到服务器、飞书应用具备多维表格权限
+> 预计耗时：30-45 分钟
+> 操作方式：全程在飞书 DM 里和龙虾对话完成
+> 目标：安装 CRM Assistant，配置飞书表，把仓库自带的 Word 会议纪要通过**用户侧权限**写入飞书 CRM 两张表
 
 ---
 
-## 0. 这份手册对应的当前项目状态
+## 0. 开始前确认
 
-当前仓库已经做过清理，默认**不再保留 raw 客户数据样本和 runtime 运行产物**。
+| # | 物料 | 备注 |
+|---|---|---|
+| 1 | 龙虾可正常对话 | 飞书 DM 发一句话能回复 |
+| 2 | CRM Assistant 仓库 | `https://github.com/lemons101/CRM-Assistant` |
+| 3 | 飞书多维表格权限 | 能创建 Base / 表 / 字段 |
+| 4 | 飞书应用凭据 | `FEISHU_APP_ID`、`FEISHU_APP_SECRET` |
+| 5 | 测试会议纪要 | 仓库自带 `assets/meeting_docs/*.docx` |
 
-因此本手册统一基于以下真实现状：
-- raw 输入样本不再默认提交到仓库
-- `runtime/` 默认是空目录，仅保留 `.gitkeep`
-- `feishu_config.json` 属于本地配置文件，不应提交到 git
-- 推荐优先使用：
-  - Word / DOCX
-  - 飞书文档 Markdown
-  - 用户自己提供的飞书会议原始 JSON
+本实验只走主线：**Word/DOCX 会议纪要 -> CRM Assistant -> 飞书 Customers / OpportunitySnapshots**。
 
----
-
-## 1. 当前真实在用的飞书表
-
-当前项目已经实际对接并验证过这套飞书多维表格：
-
-- `app_token`: `BEwNbIlMfaeNFcs3SZWc7SjInvh`
-- `Customers.table_id`: `tblCq566fSxHlwkG`
-- `OpportunitySnapshots.table_id`: `tblTuZySbF8dA1OP`
-
-### 1.1 Customers 当前真实字段
-- 客户ID（主字段）
-- 客户名称
-- 客户公司
-- 行业
-- MBTI
-- 是否单身
-- 沟通风格
-- 成交阻力
-- 价格敏感程度
-- 风险顾虑
-- 客户画像摘要
-- 客户负责人
-- 最后更新时间（日期时间）
-- 数据来源
-- 职务
-
-### 1.2 OpportunitySnapshots 当前真实字段
-- 商机ID（主字段）
-- 客户ID
-- 客户名称
-- 客户公司
-- 机会名称
-- 商机描述
-- 当前阶段
-- Lead Score（数字）
-- 意向等级
-- 高净值优先（复选框）
-- 销售区域
-- 业务价值
-- 推荐动作
-- 最新进展
-- 下次跟进时间（日期时间）
-- 最近会议时间（日期时间）
-- 商机负责人
-- 数据来源
-
-补充规则：
-- `机会名称` 优先采用 **`客户公司 - 项目主题`**
-- 不要把客户名称再硬拼到最前面
-- 客户身份信息已经由 `客户名称`、`客户公司`、`客户ID` 单独承载
-
-### 1.3 已验证写入过的真实记录
-Customers 已验证存在：
-- 张琪
-- 李昊
-- 王拓
-
-OpportunitySnapshots 已验证存在：
-- `O-BBA6BE6702`（需求确认）
-- `O-133EBBF3FB`（方案沟通）
+注意：真实写入飞书时，强调使用**用户侧写入**。也就是让龙虾用当前用户已授权的飞书能力完成落表，不要把写入理解成纯 app/bot 身份自动写表。App 配置主要用于定位和检查飞书 Base / 表结构；如果 app 身份写表遇到权限问题，应切到用户侧写入。
 
 ---
 
-## 2. 部署项目
+## 1. 创建飞书多维表格（发给龙虾）
 
-如果目录不存在：
-
-```bash
-git clone https://github.com/lemons101/CRM-Assistant.git /root/projects/CRM-Assistant
-```
-
-如果目录已存在：
-
-```bash
-cd /root/projects/CRM-Assistant
-git pull
-```
-
-建议使用独立虚拟环境：
-
-```bash
-cd /root/projects/CRM-Assistant
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python scripts/crm_assistant.py --help
-```
-
-验收点：
-- `python scripts/crm_assistant.py --help` 能正常输出
-
----
-
-## 3. 配置本地 app 写表参数（可选）
-
-如果你想先保留 CLI 侧 app 写表能力，可以在项目目录创建：
-
-`/root/projects/CRM-Assistant/feishu_config.json`
-
-示例：
-
-```json
-{
-  "app_id": "cli_xxxxxxxx",
-  "app_secret": "xxxxxxxx",
-  "app_token": "BEwNbIlMfaeNFcs3SZWc7SjInvh",
-  "customer_table_id": "tblCq566fSxHlwkG",
-  "opportunity_snapshot_table_id": "tblTuZySbF8dA1OP"
-}
-```
-
-注意：
-- 这是本地配置文件，不要提交到 git
-- 仓库已默认忽略 `feishu_config.json`
-- 当前真实环境中，**app 权限链路可能会遇到 403**；不要把“app token 可读表”误当成“app 一定可写表”
-
----
-
-## 4. 推荐输入方式
-
-当前项目推荐 3 种入口：
-
-### 4.1 Word / DOCX 入口
-最适合真实会议纪要落表：
-
-```bash
-python scripts/crm_assistant.py ingest-docx-to-bitable \
-  --docx-path ./meeting.docx \
-  --output-dir ./runtime/your_case
-```
-
-如果尝试走 app 权限写表：
-
-```bash
-python scripts/crm_assistant.py ingest-docx-to-bitable \
-  --docx-path ./meeting.docx \
-  --output-dir ./runtime/your_case \
-  --config-path ./feishu_config.json \
-  --sync-feishu
-```
-
-### 4.2 飞书文档 Markdown 入口
-
-```bash
-python scripts/crm_assistant.py ingest-feishu-doc-to-bitable \
-  --doc-markdown-path ./source_doc.md \
-  --output-dir ./runtime/your_case
-```
-
-### 4.3 飞书会议原始 JSON 入口
-
-```bash
-python scripts/crm_assistant.py ingest-feishu-raw-to-bitable \
-  --raw-input-path ./your_raw.json \
-  --output-dir ./runtime/your_case \
-  --config-path ./feishu_config.json
-```
-
-如果只想做 dry-run：
-
-```bash
-python scripts/crm_assistant.py ingest-feishu-raw-to-bitable \
-  --raw-input-path ./your_raw.json \
-  --output-dir ./runtime/your_case \
-  --config-path ./feishu_config.json \
-  --dry-run
-```
-
-> 注意：当前 raw ingest 命令本身没有 `--sync-feishu` 开关；是否继续走写表，由你是否提供写表配置以及是否 dry-run 决定。
-
----
-
-## 5. 仅做本地结构化验证
-
-如果你只想验证 CRM 结果是否能正常生成，可以先走本地链路。
-
-### 5.1 已有 `transcript + context`
-
-```bash
-python scripts/crm_assistant.py process-transcript \
-  --transcript-path ./transcript.txt \
-  --context-path ./context.json \
-  --output-dir ./runtime/local_probe/process
-```
-
-### 5.2 已有飞书原始 JSON
-先提取：
-
-```bash
-python scripts/crm_assistant.py build-context-from-feishu \
-  --raw-input-path ./your_raw.json \
-  --output-dir ./runtime/local_probe/build
-```
-
-再处理：
-
-```bash
-python scripts/crm_assistant.py process-transcript \
-  --transcript-path ./runtime/local_probe/build/transcript.txt \
-  --context-path ./runtime/local_probe/build/context.json \
-  --output-dir ./runtime/local_probe/process
-```
-
-重点检查输出：
-- `crm_packet.json`
-- `meeting_record.json`
-- `customer_profile_update.json`
-- `opportunity_update.json`
-- `customer_table_rows.json`
-- `opportunity_snapshot_row.json`
-
-> 兼容旧链路时，也可能看到 `customer_table_row.json`。
-
----
-
-## 6. 检查飞书表结构
-
-### 6.1 走 CLI / app 权限检查
-
-```bash
-python scripts/crm_assistant.py inspect-feishu-bitable \
-  --config-path ./feishu_config.json \
-  --output-dir ./runtime/inspect_feishu
-```
-
-检查点：
-- 是否能拿到 `tenant_access_token`
-- 是否能读到 Customers 表
-- 是否能读到 OpportunitySnapshots 表
-- 字段是否完整
-- 时间字段类型是否合理
-
-### 6.2 走用户权限检查（当前更贴近真实）
-如果 app 权限链路不稳，直接用用户权限读取当前表字段和记录，也已经验证可行。
-
-当前真实结果已经确认：
-- Customers 主字段是 `客户ID`
-- OpportunitySnapshots 主字段是 `商机ID`
-- `Lead Score` 是数字字段
-- `高净值优先` 是复选框
-- 时间字段都使用日期时间类型
-
----
-
-## 7. dry-run 写表验证
-
-如果你仍然要测试 CLI / app 权限链路，推荐先用 `sync-feishu-bitable` 做 dry-run：
-
-```bash
-python scripts/crm_assistant.py sync-feishu-bitable \
-  --crm-packet-path ./runtime/local_probe/process/crm_packet.json \
-  --output-dir ./runtime/dry_run_sync \
-  --config-path ./feishu_config.json \
-  --dry-run
-```
-
-重点检查：
-- 是否生成 `feishu_sync_result.json`
-- `dry_run` 是否为 `true`
-- Customers 计划是 `create` 还是 `update`
-- OpportunitySnapshots 计划是否为追加
-- 待写入的客户、阶段、Lead Score、推荐动作是否正确
-
----
-
-## 8. 当前最稳的真实落表方式：用户权限写入
-
-当前项目已经验证过：
-- **app 权限写表可能遇到 `403 Forbidden`**
-- 但**用户权限写入已经真实跑通**
-
-因此当前最稳的真实使用姿势是：
+在飞书 DM 里发送：
 
 ```text
-Word / DOCX
-  -> CRM Assistant 结构化处理
-  -> 读取 customer_table_rows.json / opportunity_snapshot_row.json
-  -> 用用户权限写入 Customers / OpportunitySnapshots
+请帮我创建一个 CRM Assistant Demo 用的飞书多维表格。
+
+要求：
+1. 新建一个 Bitable Base
+2. 创建两张表：
+   - Customers
+   - OpportunitySnapshots
+3. 字段名称必须和下面完全一致
+4. Lead Score 用数字字段
+5. 高净值优先用复选框字段
+6. 最后更新时间、下次跟进时间、最近会议时间用日期时间字段
+7. 其他字段用文本字段
+
+Customers 字段：
+客户ID、客户名称、客户公司、行业、职务、MBTI、是否单身、沟通风格、成交阻力、价格敏感程度、风险顾虑、客户画像摘要、客户负责人、最后更新时间、数据来源
+
+OpportunitySnapshots 字段：
+商机ID、客户ID、客户名称、客户公司、机会名称、商机描述、当前阶段、Lead Score、意向等级、高净值优先、销售区域、业务价值、推荐动作、最新进展、下次跟进时间、最近会议时间、商机负责人、数据来源
+
+创建完成后请返回：
+1. Base 链接
+2. app_token
+3. Customers 的 table_id
+4. OpportunitySnapshots 的 table_id
 ```
 
-### 已经验证跑通的真实结果
-- 第一份 Word：
-  - Customers 新增：张琪、李昊
-  - OpportunitySnapshots 新增：`O-BBA6BE6702`（需求确认）
-- 第二份 Word：
-  - Customers 更新：张琪、李昊
-  - Customers 新增：王拓
-  - OpportunitySnapshots 新增：`O-133EBBF3FB`（方案沟通）
-
-### 这条链路验证过的规则
-- 弱值不覆盖强值
-- `沟通风格` / `风险顾虑` 合并更新
-- 优先按 `客户ID` 命中已有客户
-- 多客户会议拆成多条 Customers 记录 + 一条 OpportunitySnapshots 快照
+把龙虾返回的 `app_token` 和两个 `table_id` 留好，后面写 `.env.local` 要用。
 
 ---
 
-## 9. 当前项目里的关键业务规则
+## 2. 安装到龙虾目录（发给龙虾）
 
-### 9.1 Customers 更新规则
-- 如果本轮值是弱值：`未明确` / `未知` / `待确认` / 空值
-- 不要覆盖历史上已经明确的旧值
+把下面这段发给龙虾。路径可以按你的环境调整；如果你的龙虾统一把技能放在别的目录，让龙虾用实际目录。
 
-### 9.2 合并字段
-以下字段采用“旧值保留 + 新值补充 + 去重”：
-- `沟通风格`
-- `风险顾虑`
+```text
+请帮我安装 CRM Assistant 到龙虾可使用的项目目录。
 
-### 9.3 Customers 命中规则
-- 优先按 `客户ID` 命中已有飞书记录
-- 缺少正式 ID 时，再回退 `客户名称 + 客户公司`
+仓库地址：
+https://github.com/lemons101/CRM-Assistant
 
-### 9.4 OpportunitySnapshots
-- 每轮会议追加一条快照
-- 不覆盖历史
+要求：
+1. 如果本地还没有项目，请 clone 这个仓库
+2. 如果本地已有项目，请 git pull 更新到 main 最新版本
+3. 进入 CRM-Assistant 项目根目录
+4. 安装 requirements.txt
+5. 运行 python scripts/crm_assistant.py --help，确认 CLI 可用
+6. 确认仓库里存在 assets/meeting_docs 目录，并且里面有 .docx 测试会议纪要
 
-### 9.5 商机ID 继承规则
-- 同一个客户、同一个项目、不同阶段推进：优先沿用同一个 `商机ID`
-- 不同阶段变化应通过 `OpportunitySnapshots` 追加快照来表达，而不是每轮都新建商机
-- 只有明确是新项目 / 新预算 / 新需求线时，才更适合生成新的 `商机ID`
-
-### 9.6 时间字段
-真正写飞书前，日期时间字段应按字段类型转换成毫秒时间戳。
+完成后告诉我：
+1. 项目实际安装目录
+2. 当前最新 commit
+3. CLI 是否可用
+4. assets/meeting_docs 下有哪些 Word 测试文档
+```
 
 ---
 
-## 10. 验收清单
+## 3. 配置 `.env.local`（发给龙虾）
 
-- [ ] 项目部署成功
+把占位符替换成你自己的真实值后，发给龙虾：
+
+```text
+请在 CRM Assistant 项目根目录创建或更新 .env.local。
+
+请写入以下内容：
+
+FEISHU_APP_ID=cli_xxxxxxxx
+FEISHU_APP_SECRET=xxxxxxxx
+FEISHU_BITABLE_APP_TOKEN=xxxxxxxx
+FEISHU_CUSTOMER_TABLE_ID=tblxxxxxxxx
+FEISHU_OPPORTUNITY_TABLE_ID=tblxxxxxxxx
+
+要求：
+1. .env.local 只保存在本地，不要提交到 git
+2. 写完后确认文件存在
+3. 不要在回复里完整展示 FEISHU_APP_SECRET
+4. 后续运行 CRM Assistant 时默认读取这个 .env.local
+```
+
+---
+
+## 4. 检查飞书表连接（发给龙虾）
+
+```text
+请用 CRM Assistant 检查飞书多维表格连接是否正常。
+
+要求：
+1. 进入 CRM Assistant 项目根目录
+2. 使用项目根目录的 .env.local
+3. 运行 inspect-feishu-bitable
+4. 输出保存到 runtime/lab15_inspect
+
+完成后告诉我：
+1. 是否能拿到 tenant_access_token
+2. 是否能读取 Base 里的表
+3. Customers 表是否存在
+4. OpportunitySnapshots 表是否存在
+5. 如果失败，请返回完整报错
+```
+
+如果这一步失败，先检查 `.env.local`、飞书应用权限、Base 是否授权给应用。
+
+---
+
+## 5. 运行 DOCX 测试并 dry-run（发给龙虾）
+
+先 dry-run，不真实写表。
+
+```text
+请用 CRM Assistant 处理仓库自带的 Word 会议纪要，并做一次飞书写表 dry-run。
+
+要求：
+1. 进入 CRM Assistant 项目根目录
+2. 使用这份测试文档：
+   assets/meeting_docs/中国平安龙虾盒子售后协同需求梳理会.docx
+3. 执行 ingest-docx-to-bitable
+4. 使用 .env.local
+5. 加上 --sync-feishu 和 --dry-run
+6. 输出目录放到 runtime/lab15_docx_dry
+
+完成后告诉我：
+1. 是否生成 runtime/lab15_docx_dry/process/crm_packet.json
+2. 是否生成 runtime/lab15_docx_dry/process/customer_table_rows.json
+3. 是否生成 runtime/lab15_docx_dry/process/opportunity_snapshot_row.json
+4. 是否生成 runtime/lab15_docx_dry/sync/feishu_sync_result.json
+5. dry_run 是否为 true
+6. 本次准备写入的客户名称、机会名称、当前阶段、Lead Score
+```
+
+看到 `dry_run=true` 代表只是预演，飞书表里还不会出现记录。
+
+---
+
+## 6. 真实写入飞书（发给龙虾）
+
+dry-run 正常后，再真实写表：
+
+```text
+请用 CRM Assistant 把仓库自带的 Word 会议纪要真实写入飞书多维表格。
+
+要求：
+1. 进入 CRM Assistant 项目根目录
+2. 使用这份测试文档：
+   assets/meeting_docs/中国平安龙虾盒子售后协同需求梳理会.docx
+3. 执行 ingest-docx-to-bitable
+4. 使用 .env.local
+5. 加上 --sync-feishu
+6. 不要加 --dry-run
+7. 写入飞书时使用用户侧权限，不要用无写权限的 app/bot 身份硬写
+8. 输出目录放到 runtime/lab15_docx_write
+
+完成后告诉我：
+1. 是否写入成功
+2. 是否确认是用户侧写入
+3. Customers 是 created / updated / batch 中的哪一种
+4. OpportunitySnapshots 是 created 还是 updated
+5. 本次写入的客户名称、机会名称、当前阶段、Lead Score、推荐动作
+6. 如果失败，请返回完整报错
+```
+
+完成后打开飞书多维表格，只看最终效果：
+- Customers 里是否出现客户画像
+- OpportunitySnapshots 里是否出现商机推进记录
+
+---
+
+## 7. 再跑一份推进阶段文档（可选，发给龙虾）
+
+如果要展示同一客户后续阶段推进，可以再跑一份仓库自带的后续会议文档：
+
+```text
+请用 CRM Assistant 再处理一份后续阶段的 Word 会议纪要，并真实写入飞书。
+
+要求：
+1. 进入 CRM Assistant 项目根目录
+2. 使用这份测试文档：
+   assets/meeting_docs/中国平安龙虾盒子售后协同方案沟通会.docx
+3. 执行 ingest-docx-to-bitable
+4. 使用 .env.local
+5. 加上 --sync-feishu
+6. 写入飞书时继续使用用户侧权限
+7. 输出目录放到 runtime/lab15_docx_write_round2
+
+完成后告诉我：
+1. 是否写入成功
+2. Customers 是否复用了已有客户并更新画像
+3. OpportunitySnapshots 写入结果是什么
+4. 当前阶段、Lead Score、推荐动作是否和第一份文档不同
+```
+
+然后回到飞书表观察：
+- Customers 是否更新了客户画像
+- OpportunitySnapshots 是否体现了推进阶段变化
+
+---
+
+## 8. 验收检查清单
+
+- [ ] 龙虾能正常对话
+- [ ] CRM Assistant 已安装到龙虾可访问目录
 - [ ] `python scripts/crm_assistant.py --help` 正常
-- [ ] 当前真实飞书表参数确认无误
-  - [ ] `app_token = BEwNbIlMfaeNFcs3SZWc7SjInvh`
-  - [ ] `Customers.table_id = tblCq566fSxHlwkG`
-  - [ ] `OpportunitySnapshots.table_id = tblTuZySbF8dA1OP`
-- [ ] 本地能生成 `crm_packet.json`
-- [ ] 能生成 `customer_table_rows.json` 和 `opportunity_snapshot_row.json`
-- [ ] 字段检查通过
-- [ ] dry-run 结果合理（如仍测试 app 权限链路）
-- [ ] 用户权限写表成功
-- [ ] 飞书里能看到 Customers 与 OpportunitySnapshots 结果
+- [ ] `assets/meeting_docs` 中存在 Word 测试文档
+- [ ] 飞书 Base 已创建
+- [ ] Customers 字段完整
+- [ ] OpportunitySnapshots 字段完整
+- [ ] `.env.local` 已配置
+- [ ] `inspect-feishu-bitable` 能读取飞书表
+- [ ] dry-run 成功生成 `feishu_sync_result.json`
+- [ ] 真实写表通过用户侧权限完成
+- [ ] 飞书 Customers 能看到客户画像
+- [ ] 飞书 OpportunitySnapshots 能看到商机推进记录
 
 ---
 
-## 11. 常见问题
+## 9. 常见问题速查
 
-### `tenant_access_token missing`
-通常是：
-- App ID / App Secret 错误
-- 飞书应用权限未开通
+| 龙虾报的错 | 可能原因 | 你发什么 |
+|---|---|---|
+| `Missing Feishu app token` | `.env.local` 里没有 `FEISHU_BITABLE_APP_TOKEN` | “请检查 .env.local 里的 FEISHU_BITABLE_APP_TOKEN” |
+| `Missing customer table id` | 缺少 `FEISHU_CUSTOMER_TABLE_ID` | “请检查 .env.local 里的 FEISHU_CUSTOMER_TABLE_ID” |
+| `Missing opportunity snapshot table id` | 缺少 `FEISHU_OPPORTUNITY_TABLE_ID` | “请检查 .env.local 里的 FEISHU_OPPORTUNITY_TABLE_ID” |
+| `tenant_access_token missing` | App ID / Secret 错误或权限不足 | “请核对 FEISHU_APP_ID 和 FEISHU_APP_SECRET” |
+| `403 Forbidden` | app/bot 身份没有写表权限，或 Base 未授权 | “请改用用户侧写入；如果仍需 app 检查，请把 Base 授权给应用” |
+| 找不到 DOCX | 没有拉到最新仓库，或路径不对 | “请 git pull，并列出 assets/meeting_docs 下的文件” |
+| dry-run 成功但飞书没记录 | dry-run 不会真实写表 | “请去掉 --dry-run 后再执行一次” |
 
-### `Missing customer table id` / `Missing opportunity table id`
-通常是：
-- `feishu_config.json` 缺字段
-- 字段名写错
+---
 
-### `Feishu API failed` / `403 Forbidden`
-当前真实环境里已经验证过，这通常说明：
-- app 能读，但不能写
-- 应用权限没开齐
-- Base / 表未授权给应用
+## 实验记录
 
-这时不要死磕 app 写入，优先切到：
-- **用户权限读取 / 用户权限写入**
+| # | 发生在哪一步 | 预期行为 | 实际行为 | 解决方法 |
+|---|---|---|---|---|
+| 1 | | | | |
+| 2 | | | | |
+| 3 | | | | |
 
-### 只生成 JSON，没真正写表
-先确认：
-- 是不是跑了纯本地命令
-- 是不是启用了 `--dry-run`
-- 是不是未提供有效写表配置
-- 是不是已经改走用户权限链路但还没执行写表
-
-### Customers 旧画像被错误覆盖
-优先检查：
-- 本轮输入是否只有弱值
-- 最终写入前是否正确应用“弱值保护”
-- `沟通风格` / `风险顾虑` 是否按合并策略写回
+> 本节实验只要求跑通主链路：安装 Skill、配置 `.env.local`、处理 Word 会议纪要，并通过用户侧权限确认飞书两张表出现结果。
