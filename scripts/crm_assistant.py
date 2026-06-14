@@ -538,41 +538,53 @@ def parse_feishu_doc_meeting_markdown(doc_markdown: str, fallback_title: str | N
     transcript_lines: list[str] = []
     current_section: str | None = None
     pending_speaker: str | None = None
-    pending_time_text: str | None = None
 
     basic_info_map: OrderedDict[str, str] = OrderedDict()
+
+    def normalize_section_title(value: str) -> str:
+        text_value = str(value or "").strip().strip("#").strip()
+        text_value = text_value.strip("* ")
+        return text_value
+
+    def is_section(value: str, target: str) -> bool:
+        normalized = normalize_section_title(value)
+        return normalized == target or normalized.endswith(target)
 
     for raw_line in lines:
         line = raw_line.strip()
         if not line:
             continue
-        if re.fullmatch(r"\*\*一、会议基本信息\*\*", line):
+
+        if is_section(line, "一、会议基本信息"):
             current_section = "basic_info"
             continue
-        if re.fullmatch(r"\*\*二、参会人员\*\*", line):
+        if is_section(line, "二、参会人员"):
             current_section = "participants"
             continue
-        if re.fullmatch(r"\*\*三、文字记录\*\*", line):
+        if is_section(line, "三、文字记录"):
             current_section = "transcript"
             continue
 
         if current_section == "basic_info":
             bullet_match = re.match(r"-\s*\*\*(.+?)\*\*[:：]\s*(.+)$", line)
-            if bullet_match:
-                key = bullet_match.group(1).strip()
-                value = bullet_match.group(2).strip()
+            plain_match = re.match(r"(.+?)[:：]\s*(.+)$", line)
+            match = bullet_match or plain_match
+            if match:
+                key = match.group(1).strip().strip("* ")
+                value = match.group(2).strip()
                 basic_info_map[key] = value
                 continue
 
         if current_section == "participants":
-            participant_match = re.match(r"-\s*\*\*(.+?)\*\*[｜|](.+?)[｜|](.+?)[｜|](.+)$", line)
+            participant_match = re.match(r"(?:-\s*)?(?:\*\*(.+?)\*\*|(.+?))[｜|](.+?)[｜|](.+?)[｜|](.+)$", line)
             if participant_match:
+                name = (participant_match.group(1) or participant_match.group(2) or "").strip()
                 participants.append({
                     "user_id": None,
-                    "name": participant_match.group(1).strip(),
-                    "role": participant_match.group(2).strip(),
-                    "company": participant_match.group(3).strip(),
-                    "industry": participant_match.group(4).strip(),
+                    "name": name,
+                    "role": participant_match.group(3).strip(),
+                    "company": participant_match.group(4).strip(),
+                    "industry": participant_match.group(5).strip(),
                 })
                 continue
 
@@ -580,12 +592,10 @@ def parse_feishu_doc_meeting_markdown(doc_markdown: str, fallback_title: str | N
             speaker_match = re.match(r"^(.+?)\s+(上午|下午)\s*(\d{1,2}:\d{2})$", line)
             if speaker_match:
                 pending_speaker = speaker_match.group(1).strip()
-                pending_time_text = f"{speaker_match.group(2)} {speaker_match.group(3)}"
                 continue
             if pending_speaker and line:
                 transcript_lines.append(f"{pending_speaker}：{line}")
                 pending_speaker = None
-                pending_time_text = None
                 continue
 
     if basic_info_map.get("会议主题"):
@@ -957,6 +967,20 @@ def find_feishu_record_by_field(records: list[dict[str, Any]], field_name: str, 
     return None
 
 
+def find_feishu_record_by_customer_identity(records: list[dict[str, Any]], customer_name: Any, company_name: Any) -> dict[str, Any] | None:
+    expected_name = str(customer_name or "").strip()
+    expected_company = str(company_name or "").strip()
+    if not expected_name:
+        return None
+    for record in records:
+        fields = record.get("fields") or {}
+        actual_name = str(fields.get("客户名称") or "").strip()
+        actual_company = str(fields.get("客户公司") or "").strip()
+        if actual_name == expected_name and actual_company == expected_company:
+            return record
+    return None
+
+
 def inspect_feishu_bitable(app_id: str, app_secret: str, app_token_or_url: str, output_dir: str | Path, table_id: str | None = None) -> dict[str, Any]:
     app_token = extract_bitable_app_token(app_token_or_url)
     if app_token is None:
@@ -1020,12 +1044,15 @@ def sync_crm_packet_to_feishu(
 
     customer_field_mapping = get_object_value(config, "customer_field_mapping", {}) or {}
     opportunity_field_mapping = get_object_value(config, "opportunity_field_mapping", {}) or {}
-    customer_key_field = str(get_object_value(config, "customer_key_field", "客户ID")).strip() or "客户ID"
+    customer_key_field = str(get_object_value(config, "customer_key_field", "客户名称+客户公司")).strip() or "客户名称+客户公司"
 
-    customer_row = map_row_fields(crm_packet["customer_table_row"], customer_field_mapping)
+    customer_rows_source = crm_packet.get("customer_table_rows") or []
+    if not customer_rows_source and crm_packet.get("customer_table_row"):
+        customer_rows_source = [crm_packet["customer_table_row"]]
+    customer_rows = [map_row_fields(row, customer_field_mapping) for row in customer_rows_source]
+    customer_row = customer_rows[0] if customer_rows else OrderedDict()
     opportunity_row = map_row_fields(crm_packet["opportunity_snapshot_row"], opportunity_field_mapping)
-    customer_key_source_field = next((field for field, target in customer_field_mapping.items() if str(target).strip() == customer_key_field), customer_key_field)
-    customer_key_value = crm_packet["customer_table_row"].get(customer_key_source_field)
+    customer_keys = [f"{row.get('客户名称', '')}||{row.get('客户公司', '')}" for row in customer_rows]
 
     report: OrderedDict[str, Any] = OrderedDict([
         ("crm_packet_path", resolve_str(crm_packet_path)),
@@ -1034,10 +1061,12 @@ def sync_crm_packet_to_feishu(
         ("customer_table_id", resolved_customer_table_id),
         ("opportunity_snapshot_table_id", resolved_opportunity_table_id),
         ("customer_key_field", customer_key_field),
-        ("customer_key_value", customer_key_value),
+        ("customer_key_value", customer_keys[0] if customer_keys else None),
+        ("customer_key_values", customer_keys),
         ("dry_run", dry_run),
-        ("customer_candidate_row_fields", customer_row),
+        ("customer_candidate_row_fields", customer_rows),
         ("customer_row_fields", customer_row),
+        ("customer_row_fields_list", customer_rows),
         ("opportunity_row_fields", opportunity_row),
     ])
 
@@ -1049,39 +1078,60 @@ def sync_crm_packet_to_feishu(
             raise ValueError("Missing Feishu app credentials. Provide --app-id/--app-secret, config, or environment variables.")
         access_token = get_feishu_tenant_access_token(resolved_app_id, resolved_app_secret)
         existing_records = list_feishu_bitable_records(resolved_app_token, str(resolved_customer_table_id), access_token)
-        existing_record = find_feishu_record_by_field(existing_records, customer_key_field, customer_key_value)
-        if existing_record is None:
-            customer_response = batch_create_feishu_bitable_records(
-                resolved_app_token,
-                str(resolved_customer_table_id),
-                [{"fields": customer_row}],
-                access_token,
-            )
-            report["customer_action"] = "created"
-            report["customer_response"] = customer_response
-        else:
-            effective_customer_row, preserved_fields = merge_row_preserving_existing_values(customer_row, existing_record.get("fields") or {})
-            effective_customer_row["客户画像摘要"] = build_customer_profile_summary(
-                effective_customer_row.get("客户名称"),
-                opportunity_row.get("当前阶段"),
-                effective_customer_row.get("MBTI"),
-                effective_customer_row.get("是否单身"),
-                effective_customer_row.get("沟通风格"),
-                effective_customer_row.get("成交阻力"),
-                effective_customer_row.get("价格敏感程度"),
-                effective_customer_row.get("风险顾虑"),
-            )
-            customer_response = batch_update_feishu_bitable_records(
-                resolved_app_token,
-                str(resolved_customer_table_id),
-                [{"record_id": existing_record["record_id"], "fields": effective_customer_row}],
-                access_token,
-            )
-            report["customer_action"] = "updated"
-            report["customer_record_id"] = existing_record.get("record_id")
-            report["customer_row_fields"] = effective_customer_row
-            report["customer_preserved_fields"] = preserved_fields
-            report["customer_response"] = customer_response
+        customer_actions: list[str] = []
+        customer_responses: list[Any] = []
+        customer_record_ids: list[str] = []
+        customer_preserved_fields_map: OrderedDict[str, list[str]] = OrderedDict()
+        effective_customer_rows: list[dict[str, Any]] = []
+        for row in customer_rows:
+            row_name = row.get("客户名称")
+            row_company = row.get("客户公司")
+            existing_record = find_feishu_record_by_customer_identity(existing_records, row_name, row_company)
+            if existing_record is None:
+                customer_response = batch_create_feishu_bitable_records(
+                    resolved_app_token,
+                    str(resolved_customer_table_id),
+                    [{"fields": row}],
+                    access_token,
+                )
+                customer_actions.append("created")
+                customer_responses.append(customer_response)
+                effective_customer_rows.append(row)
+                customer_preserved_fields_map[f"{row_name}||{row_company or ''}"] = []
+            else:
+                effective_customer_row, preserved_fields = merge_row_preserving_existing_values(row, existing_record.get("fields") or {})
+                effective_customer_row["客户画像摘要"] = build_customer_profile_summary(
+                    effective_customer_row.get("客户名称"),
+                    opportunity_row.get("当前阶段"),
+                    effective_customer_row.get("MBTI"),
+                    effective_customer_row.get("是否单身"),
+                    effective_customer_row.get("沟通风格"),
+                    effective_customer_row.get("成交阻力"),
+                    effective_customer_row.get("价格敏感程度"),
+                    effective_customer_row.get("风险顾虑"),
+                )
+                customer_response = batch_update_feishu_bitable_records(
+                    resolved_app_token,
+                    str(resolved_customer_table_id),
+                    [{"record_id": existing_record["record_id"], "fields": effective_customer_row}],
+                    access_token,
+                )
+                customer_actions.append("updated")
+                customer_responses.append(customer_response)
+                customer_record_ids.append(existing_record.get("record_id"))
+                effective_customer_rows.append(effective_customer_row)
+                customer_preserved_fields_map[f"{row_name}||{row_company or ''}"] = preserved_fields
+        report["customer_action"] = customer_actions[0] if len(customer_actions) == 1 else "batch"
+        report["customer_actions"] = customer_actions
+        if customer_record_ids:
+            report["customer_record_id"] = customer_record_ids[0]
+            report["customer_record_ids"] = customer_record_ids
+        report["customer_row_fields"] = effective_customer_rows[0] if effective_customer_rows else customer_row
+        report["customer_row_fields_list"] = effective_customer_rows
+        report["customer_preserved_fields"] = next(iter(customer_preserved_fields_map.values()), []) if customer_preserved_fields_map else []
+        report["customer_preserved_fields_map"] = customer_preserved_fields_map
+        report["customer_response"] = customer_responses[0] if len(customer_responses) == 1 else customer_responses
+        report["customer_responses"] = customer_responses
 
         opportunity_response = batch_create_feishu_bitable_records(
             resolved_app_token,
@@ -1105,13 +1155,102 @@ def get_first_participant_by_role(participants: list[dict[str, Any]], roles: lis
     return None
 
 
+def get_participants_by_role(participants: list[dict[str, Any]], roles: list[str]) -> list[dict[str, Any]]:
+    matched: list[dict[str, Any]] = []
+    for participant in participants:
+        if participant.get("role") in roles:
+            matched.append(participant)
+    return matched
+
+
+def split_participants_by_identity(participants: list[dict[str, Any]], company_name: Any = None, owner: Any = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    company_text = str(company_name or "").strip()
+    owner_text = str(owner or "").strip()
+    internal_company_hints = ["载极", "我方", "本方", "销售", "顾问", "实施", "方案", "客服", "交付"]
+
+    external_contacts: list[dict[str, Any]] = []
+    internal_contacts: list[dict[str, Any]] = []
+    fallback_unknowns: list[dict[str, Any]] = []
+
+    for participant in participants:
+        role_text = str(participant.get("role") or "").strip()
+        participant_company = str(participant.get("company") or "").strip()
+        participant_name = str(participant.get("name") or "").strip()
+        normalized_role = role_text.lower()
+
+        if normalized_role in {"external", "guest", "customer"}:
+            external_contacts.append(participant)
+            continue
+        if normalized_role in {"internal", "host", "owner"}:
+            internal_contacts.append(participant)
+            continue
+        if owner_text and participant_name == owner_text:
+            internal_contacts.append(participant)
+            continue
+        if company_text and participant_company and participant_company == company_text:
+            external_contacts.append(participant)
+            continue
+        if participant_company and any(hint in participant_company for hint in internal_company_hints):
+            internal_contacts.append(participant)
+            continue
+        if role_text and any(hint in role_text for hint in internal_company_hints):
+            internal_contacts.append(participant)
+            continue
+        fallback_unknowns.append(participant)
+
+    if not external_contacts and fallback_unknowns:
+        external_contacts.extend(fallback_unknowns)
+    else:
+        for participant in fallback_unknowns:
+            if participant not in external_contacts and participant not in internal_contacts:
+                external_contacts.append(participant)
+
+    return external_contacts, internal_contacts
+
+
+def normalize_contact(person: dict[str, Any] | None) -> OrderedDict[str, Any] | None:
+    if person is None:
+        return None
+    name = str(person.get("name") or "").strip()
+    company = str(person.get("company") or "").strip()
+    industry = str(person.get("industry") or "").strip()
+    role = str(person.get("role") or "unknown").strip() or "unknown"
+    user_id = person.get("user_id")
+    if not any([name, company, industry, user_id]):
+        return None
+    return OrderedDict([
+        ("user_id", user_id),
+        ("name", name or None),
+        ("role", role),
+        ("company", company or None),
+        ("industry", industry or None),
+    ])
+
+
+def dedupe_contacts(contacts: list[dict[str, Any]]) -> list[OrderedDict[str, Any]]:
+    deduped: list[OrderedDict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for contact in contacts:
+        normalized = normalize_contact(contact)
+        if normalized is None:
+            continue
+        key = (
+            str(normalized.get("name") or "").strip(),
+            str(normalized.get("company") or "").strip(),
+            str(normalized.get("user_id") or "").strip(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(normalized)
+    return deduped
+
+
 def normalize_transcript_speakers(transcript_text: str, owner: Any = None, customer_name: Any = None) -> str:
     text = str(transcript_text or "").strip()
     if not text:
         return text
 
-    owner_text = str(owner or "").strip()
-    customer_text = str(customer_name or "").strip()
     normalized_lines: list[str] = []
     for raw_line in text.splitlines():
         line = str(raw_line).strip()
@@ -1123,12 +1262,7 @@ def normalize_transcript_speakers(transcript_text: str, owner: Any = None, custo
             continue
         speaker = speaker_match.group(1).strip()
         content = speaker_match.group(2).strip()
-        normalized_speaker = speaker
-        if owner_text and speaker == owner_text:
-            normalized_speaker = "销售"
-        elif customer_text and speaker == customer_text:
-            normalized_speaker = "客户"
-        normalized_lines.append(f"{normalized_speaker}：{content}")
+        normalized_lines.append(f"{speaker}：{content}")
     return "\n".join(normalized_lines)
 
 
@@ -1137,17 +1271,20 @@ def build_context_from_feishu(raw_input_path: str | Path, output_dir: str | Path
     participants = list(raw.get("participants") or [])
     crm_binding = raw.get("crm_binding") or {}
     existing_customer_fields = get_object_value(crm_binding, "existing_customer_fields", {}) or {}
-    external_participant = get_first_participant_by_role(participants, ["external", "guest", "customer"])
-    internal_participant = get_first_participant_by_role(participants, ["internal", "host", "owner"])
+    company_name = get_object_value(crm_binding, "company_name")
+    owner = get_object_value(crm_binding, "owner")
+    split_external_contacts, split_internal_contacts = split_participants_by_identity(participants, company_name=company_name, owner=owner)
+    external_contacts = dedupe_contacts(split_external_contacts)
+    internal_contacts = dedupe_contacts(split_internal_contacts)
+    external_participant = external_contacts[0] if external_contacts else None
+    internal_participant = internal_contacts[0] if internal_contacts else None
     transcript_text = get_transcript_text(raw)
 
     customer_name = get_object_value(crm_binding, "customer_name")
     if customer_name is None and external_participant is not None:
         customer_name = external_participant.get("name")
-    company_name = get_object_value(crm_binding, "company_name")
     if company_name is None and external_participant is not None:
         company_name = external_participant.get("company")
-    owner = get_object_value(crm_binding, "owner")
     if owner is None and internal_participant is not None:
         owner = internal_participant.get("name")
     industry = get_object_value(crm_binding, "industry")
@@ -1164,6 +1301,8 @@ def build_context_from_feishu(raw_input_path: str | Path, output_dir: str | Path
         ("company_name", company_name),
         ("owner", owner),
         ("industry", industry),
+        ("external_contacts", external_contacts),
+        ("internal_contacts", internal_contacts),
         ("opportunity_id", get_object_value(crm_binding, "opportunity_id")),
         ("current_stage", get_object_value(crm_binding, "current_stage", "未知")),
         ("sales_region", get_object_value(crm_binding, "sales_region")),
@@ -1200,8 +1339,22 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
     industry_name = get_object_value(context, "industry")
     source_channel = get_object_value(context, "channel", "手动导入")
     existing_customer_fields = get_object_value(context, "existing_customer_fields", {}) or {}
+    external_contacts = [item for item in (get_object_value(context, "external_contacts", []) or []) if isinstance(item, dict)]
+    internal_contacts = [item for item in (get_object_value(context, "internal_contacts", []) or []) if isinstance(item, dict)]
+    external_names = [str(item.get("name") or "").strip() for item in external_contacts if str(item.get("name") or "").strip()]
+    internal_names = [str(item.get("name") or "").strip() for item in internal_contacts if str(item.get("name") or "").strip()]
 
-    customer_lines = [line for line in lines if re.search(r"^(客户|张总|陈女士|刘总|孙总|客户A|客户B|客户C|客户D)[:：]", line)]
+    def line_speaker(line: str) -> str | None:
+        match = re.match(r"^([^：:]+)[：:](.*)$", line)
+        return match.group(1).strip() if match else None
+
+    def line_content(line: str) -> str:
+        match = re.match(r"^([^：:]+)[：:](.*)$", line)
+        return match.group(2).strip() if match else str(line).strip()
+
+    customer_lines = [line for line in lines if line_speaker(line) in external_names]
+    if not customer_lines:
+        customer_lines = [line for line in lines if re.search(r"^(客户|张总|陈女士|刘总|孙总|客户A|客户B|客户C|客户D)[:：]", line)]
     if not customer_lines:
         customer_lines = lines[:]
     all_text = " ".join(lines)
@@ -1278,7 +1431,38 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
     )
 
     follow_up_time = next_meeting_time if next_meeting_time is not None else (meeting_time + timedelta(days=2) if meeting_time else None)
-    recommended_action = {
+
+    contact_lines_map: OrderedDict[str, list[str]] = OrderedDict()
+    for name in external_names:
+        contact_lines_map[name] = [line for line in lines if line_speaker(line) == name]
+    if not contact_lines_map:
+        fallback_name = str(get_object_value(context, "customer_name") or "客户").strip() or "客户"
+        contact_lines_map[fallback_name] = customer_lines[:]
+
+    role_hints = [
+        "负责人", "采购", "法务", "财务", "运营", "技术", "产品", "老板", "总监", "经理", "主管", "接口人", "决策", "审批", "使用方",
+    ]
+
+    def infer_contact_role_notes(contact_name: str, contact_lines: list[str]) -> list[str]:
+        notes: list[str] = []
+        scoped_text = " ".join(contact_lines)
+        for hint in role_hints:
+            if re.search(hint, scoped_text) and hint not in notes:
+                notes.append(hint)
+        return notes
+
+    aggregated_contact_names = "、".join(external_names) if external_names else str(get_object_value(context, "customer_name") or "客户")
+    contact_action_fragments: list[str] = []
+    for contact in external_contacts or [{"name": aggregated_contact_names, "company": company_name, "industry": industry_name}]:
+        contact_name = str(contact.get("name") or "").strip() or aggregated_contact_names
+        scoped_lines = contact_lines_map.get(contact_name, customer_lines)
+        scoped_text = " ".join(scoped_lines)
+        role_notes = infer_contact_role_notes(contact_name, scoped_lines)
+        responsibilities = "、".join(role_notes[:2]) if role_notes else "对应职责"
+        direct_next = get_matched_lines(scoped_lines + next_action_lines, ["发我", "发邮件", "邮箱", "报价", "方案", "演示", "安排", "见面", "试点", "下周", "明天", "周[一二三四五]"])
+        next_step = join_values(direct_next[:2], "按约定推进下一步")
+        contact_action_fragments.append(f"向{contact_name}同步{responsibilities}相关材料，并{next_step}")
+    stage_default_action = {
         "已成交": "切换到交付执行节奏，确认启动会、责任分工与阶段验收安排",
         "待成交": "推动最终确认并准备签约/付款材料",
         "推进中": "整理推进清单，锁定关键角色并跟进采购/法务节点",
@@ -1286,32 +1470,25 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         "需求确认": "补齐关键需求信息并推动进入方案讨论",
         "初次接触": "发送简洁会后摘要并继续培育客户意向",
     }[opportunity_stage]
+    recommended_action = "；".join(contact_action_fragments[:3]) if contact_action_fragments else stage_default_action
+    if not recommended_action.strip():
+        recommended_action = stage_default_action
     channel = "邮件" if "偏好邮件接收" in communication_style else ("微信" if "偏好微信触达" in communication_style else "飞书消息")
 
-    summary = f"{get_object_value(context, 'customer_name')}本次重点关注{join_values(need_lines, '当前需求待补充')}；主要顾虑为{join_values(concern_lines, '当前未明确提出强顾虑')}；建议下一步{join_values(next_action_lines, recommended_action)}。"
+    summary = f"{aggregated_contact_names}本次重点关注{join_values(need_lines, '当前需求待补充')}；主要顾虑为{join_values(concern_lines, '当前未明确提出强顾虑')}；建议下一步{join_values(next_action_lines, recommended_action)}。"
     mbti = infer_mbti(all_text)
     single_status = infer_single_status(customer_text)
     resistance_level = infer_resistance_level(opportunity_stage, risk_concerns, customer_text)
     price_sensitivity = infer_price_sensitivity(customer_text, risk_concerns, budget_max)
-    profile_summary = build_customer_profile_summary(
-        get_object_value(context, "customer_name"),
-        opportunity_stage,
-        mbti,
-        single_status,
-        join_values(communication_style, "常规沟通"),
-        resistance_level,
-        price_sensitivity,
-        join_values(risk_concerns, "暂无明显风险顾虑"),
-    )
     latest_progress = f"本次会议后，客户处于{opportunity_stage}阶段，Lead Score {lead_score}，推荐动作：{recommended_action}"
 
     opportunity_theme = infer_opportunity_theme(
         get_object_value(context, "source_title"),
         all_text,
         company_name,
-        get_object_value(context, "customer_name"),
+        aggregated_contact_names,
     )
-    opportunity_name = f"{get_object_value(context, 'customer_name')} - {opportunity_theme}"
+    opportunity_name = f"{aggregated_contact_names} - {opportunity_theme}"
     opportunity_description = {
         "已成交": "客户已完成合同签署或成交确认，当前重点已转向项目启动、交付排期与阶段验收。",
         "待成交": "客户已进入合同/定稿推进阶段，重点是锁定签约前材料与排期。",
@@ -1320,16 +1497,6 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         "需求确认": "客户已明确核心需求与约束条件，下一步应推动进入方案沟通。",
         "初次接触": "客户当前仍处于接触或观察阶段，适合继续培育与补充需求理解。",
     }[opportunity_stage]
-
-    draft_message = (
-        f"{get_object_value(context, 'customer_name')} 您好，今天沟通的重点我帮您收了一版：\n"
-        f"1. 您当前最关注的是：{join_values(need_lines, '核心需求已记录')}。\n"
-        f"2. 我们会重点处理：{join_values(concern_lines, '本次暂无突出顾虑')}。\n"
-        f"3. 下一步我会：{recommended_action}。\n"
-        f"如果方便，我先通过{channel}发您精简版材料，您看完后我们再按约定时间推进。"
-    )
-    brief_trigger = next_meeting_time - timedelta(hours=1) if next_meeting_time is not None else None
-    opening_script = f"先从客户最在意的{join_values(need_lines, '当前需求')}切入，再回应{join_values(risk_concerns, '执行细节')}，最后确认{join_values(next_action_lines, recommended_action)}。"
 
     discussion_points: list[str] = []
     for item in need_lines + concern_lines:
@@ -1341,11 +1508,13 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
             key_points.append(item)
     commitments = next_action_lines[:3]
     meeting_id_suffix = meeting_time.strftime("%Y%m%d%H%M") if meeting_time else "unknown"
+    meeting_customer_id = get_object_value(context, "customer_id") or "multi"
 
     meeting_record = OrderedDict([
-        ("meeting_id", f"MTG-{get_object_value(context, 'customer_id')}-{meeting_id_suffix}"),
+        ("meeting_id", f"MTG-{meeting_customer_id}-{meeting_id_suffix}"),
         ("customer_id", get_object_value(context, "customer_id")),
-        ("customer_name", get_object_value(context, "customer_name")),
+        ("customer_name", aggregated_contact_names),
+        ("customer_names", external_names),
         ("company_name", company_name),
         ("meeting_time", isoformat_or_none(meeting_time)),
         ("summary", summary),
@@ -1355,18 +1524,91 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         ("next_actions", next_action_lines),
         ("commitments", commitments),
     ])
-    customer_profile_update = OrderedDict([
-        ("customer_id", get_object_value(context, "customer_id")),
-        ("company_name", company_name),
-        ("industry", industry_name),
-        ("mbti", mbti),
-        ("single_status", single_status),
-        ("resistance_level", resistance_level),
-        ("price_sensitivity", price_sensitivity),
-        ("risk_concerns", risk_concerns),
-        ("communication_style", communication_style),
-        ("profile_summary", profile_summary),
-    ])
+
+    customer_profile_updates: list[OrderedDict[str, Any]] = []
+    customer_table_rows: list[OrderedDict[str, Any]] = []
+    customer_preserved_fields_map: OrderedDict[str, list[str]] = OrderedDict()
+    for index, contact in enumerate(external_contacts or [{"name": get_object_value(context, "customer_name"), "company": company_name, "industry": industry_name}]):
+        contact_name = str(contact.get("name") or "").strip() or f"联系人{index + 1}"
+        contact_company = str(contact.get("company") or company_name or "").strip() or company_name
+        contact_industry = str(contact.get("industry") or industry_name or "").strip() or industry_name
+        scoped_lines = contact_lines_map.get(contact_name, customer_lines)
+        scoped_text = " ".join(scoped_lines) if scoped_lines else customer_text
+        scoped_mbti = infer_mbti(scoped_text or all_text)
+        scoped_single_status = infer_single_status(scoped_text or customer_text)
+        scoped_risk_concerns = get_labels(scoped_text or customer_text, risk_concern_map) or risk_concerns
+        scoped_communication_style = get_labels(scoped_text or customer_text, communication_style_map) or communication_style
+        scoped_resistance_level = infer_resistance_level(opportunity_stage, scoped_risk_concerns, scoped_text or customer_text)
+        scoped_price_sensitivity = infer_price_sensitivity(scoped_text or customer_text, scoped_risk_concerns, budget_max)
+        scoped_profile_summary = build_customer_profile_summary(
+            contact_name,
+            opportunity_stage,
+            scoped_mbti,
+            scoped_single_status,
+            join_values(scoped_communication_style, "常规沟通"),
+            scoped_resistance_level,
+            scoped_price_sensitivity,
+            join_values(scoped_risk_concerns, "暂无明显风险顾虑"),
+        )
+        profile_update = OrderedDict([
+            ("customer_id", get_object_value(context, "customer_id")),
+            ("customer_name", contact_name),
+            ("company_name", contact_company),
+            ("industry", contact_industry),
+            ("mbti", scoped_mbti),
+            ("single_status", scoped_single_status),
+            ("resistance_level", scoped_resistance_level),
+            ("price_sensitivity", scoped_price_sensitivity),
+            ("risk_concerns", scoped_risk_concerns),
+            ("communication_style", scoped_communication_style),
+            ("profile_summary", scoped_profile_summary),
+        ])
+        customer_profile_updates.append(profile_update)
+
+        row_existing_fields = existing_customer_fields
+        if isinstance(existing_customer_fields, dict) and any(isinstance(v, dict) for v in existing_customer_fields.values()):
+            composite_key = f"{contact_name}||{contact_company or ''}"
+            row_existing_fields = existing_customer_fields.get(composite_key) or existing_customer_fields.get(contact_name) or {}
+        customer_table_row = OrderedDict([
+            ("客户ID", get_object_value(context, "customer_id")),
+            ("客户名称", contact_name),
+            ("客户公司", contact_company),
+            ("行业", contact_industry),
+            ("MBTI", profile_update["mbti"]),
+            ("是否单身", profile_update["single_status"]),
+            ("沟通风格", join_values(profile_update["communication_style"])),
+            ("成交阻力", profile_update["resistance_level"]),
+            ("价格敏感程度", profile_update["price_sensitivity"]),
+            ("风险顾虑", join_values(profile_update["risk_concerns"])),
+            ("客户画像摘要", profile_update["profile_summary"]),
+            ("客户负责人", get_object_value(context, "owner")),
+            ("最后更新时间", isoformat_or_none(meeting_time)),
+            ("数据来源", source_channel),
+        ])
+        customer_table_row, preserved_customer_fields = merge_row_preserving_existing_values(customer_table_row, row_existing_fields)
+        customer_table_row["客户画像摘要"] = build_customer_profile_summary(
+            customer_table_row.get("客户名称"),
+            opportunity_stage,
+            customer_table_row.get("MBTI"),
+            customer_table_row.get("是否单身"),
+            customer_table_row.get("沟通风格"),
+            customer_table_row.get("成交阻力"),
+            customer_table_row.get("价格敏感程度"),
+            customer_table_row.get("风险顾虑"),
+        )
+        customer_table_rows.append(customer_table_row)
+        customer_preserved_fields_map[f"{contact_name}||{contact_company or ''}"] = preserved_customer_fields
+
+    draft_message = (
+        f"{aggregated_contact_names} 您好，今天沟通的重点我帮您收了一版：\n"
+        f"1. 您当前最关注的是：{join_values(need_lines, '核心需求已记录')}。\n"
+        f"2. 我们会重点处理：{join_values(concern_lines, '本次暂无突出顾虑')}。\n"
+        f"3. 下一步我会：{recommended_action}。\n"
+        f"如果方便，我先通过{channel}发您精简版材料，您看完后我们再按约定时间推进。"
+    )
+    brief_trigger = next_meeting_time - timedelta(hours=1) if next_meeting_time is not None else None
+    opening_script = f"先从客户最在意的{join_values(need_lines, '当前需求')}切入，再回应{join_values(risk_concerns, '执行细节')}，最后确认{join_values(next_action_lines, recommended_action)}。"
+
     opportunity_update = OrderedDict([
         ("opportunity_id", get_object_value(context, "opportunity_id")),
         ("opportunity_name", opportunity_name),
@@ -1382,7 +1624,7 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         ("latest_progress", latest_progress),
     ])
     follow_up_task = OrderedDict([
-        ("task_title", f"跟进 {get_object_value(context, 'customer_name')} - {opportunity_stage}"),
+        ("task_title", f"跟进 {aggregated_contact_names} - {opportunity_stage}"),
         ("owner", get_object_value(context, "owner")),
         ("due_at", isoformat_or_none(follow_up_time)),
         ("channel", channel),
@@ -1392,43 +1634,16 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
     pre_meeting_brief = OrderedDict([
         ("next_meeting_at", isoformat_or_none(next_meeting_time)),
         ("trigger_at", isoformat_or_none(brief_trigger)),
-        ("headline", f"{get_object_value(context, 'customer_name')} 会前行动简报"),
+        ("headline", f"{aggregated_contact_names} 会前行动简报"),
         ("opening_script", opening_script),
         ("key_points", key_points),
         ("watchouts", list(OrderedDict.fromkeys(concern_lines))),
         ("materials_to_prepare", ["客户画像摘要", "上次会议结论", "与本次需求对应的方案/案例/报价材料"]),
     ])
-    customer_table_row = OrderedDict([
-        ("客户ID", get_object_value(context, "customer_id")),
-        ("客户名称", get_object_value(context, "customer_name")),
-        ("客户公司", company_name),
-        ("行业", industry_name),
-        ("MBTI", customer_profile_update["mbti"]),
-        ("是否单身", customer_profile_update["single_status"]),
-        ("沟通风格", join_values(customer_profile_update["communication_style"])),
-        ("成交阻力", customer_profile_update["resistance_level"]),
-        ("价格敏感程度", customer_profile_update["price_sensitivity"]),
-        ("风险顾虑", join_values(customer_profile_update["risk_concerns"])),
-        ("客户画像摘要", customer_profile_update["profile_summary"]),
-        ("客户负责人", get_object_value(context, "owner")),
-        ("最后更新时间", isoformat_or_none(meeting_time)),
-        ("数据来源", source_channel),
-    ])
-    customer_table_row, preserved_customer_fields = merge_row_preserving_existing_values(customer_table_row, existing_customer_fields)
-    customer_table_row["客户画像摘要"] = build_customer_profile_summary(
-        customer_table_row.get("客户名称"),
-        opportunity_stage,
-        customer_table_row.get("MBTI"),
-        customer_table_row.get("是否单身"),
-        customer_table_row.get("沟通风格"),
-        customer_table_row.get("成交阻力"),
-        customer_table_row.get("价格敏感程度"),
-        customer_table_row.get("风险顾虑"),
-    )
     opportunity_snapshot_row = OrderedDict([
         ("商机ID", get_object_value(context, "opportunity_id")),
         ("客户ID", get_object_value(context, "customer_id")),
-        ("客户名称", get_object_value(context, "customer_name")),
+        ("客户名称", aggregated_contact_names),
         ("客户公司", company_name),
         ("机会名称", opportunity_update["opportunity_name"]),
         ("商机描述", opportunity_update["opportunity_description"]),
@@ -1445,19 +1660,25 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         ("商机负责人", get_object_value(context, "owner")),
         ("数据来源", source_channel),
     ])
+    customer_table_row = customer_table_rows[0] if customer_table_rows else OrderedDict()
+    customer_profile_update = customer_profile_updates[0] if customer_profile_updates else OrderedDict()
+    preserved_customer_fields = next(iter(customer_preserved_fields_map.values()), [])
     feishu_payload = OrderedDict([
-        ("customer_table", OrderedDict([("mode", "upsert"), ("key_field", "客户ID"), ("key", get_object_value(context, "customer_id")), ("update_fields", customer_table_row)])),
+        ("customer_table", [OrderedDict([("mode", "upsert"), ("key_field", "客户名称+客户公司"), ("key", f"{row.get('客户名称', '')}||{row.get('客户公司', '')}"), ("update_fields", row)]) for row in customer_table_rows]),
         ("opportunity_snapshot_table", OrderedDict([("mode", "append"), ("append_row", opportunity_snapshot_row)])),
     ])
     crm_packet = OrderedDict([
         ("input", OrderedDict([("transcript_path", resolve_str(transcript_path)), ("context_path", resolve_str(context_path)), ("customer_id", get_object_value(context, "customer_id")), ("opportunity_id", get_object_value(context, "opportunity_id"))])),
         ("meeting", meeting_record),
         ("customer_profile_update", customer_profile_update),
+        ("customer_profile_updates", customer_profile_updates),
         ("opportunity_update", opportunity_update),
         ("follow_up_task", follow_up_task),
         ("pre_meeting_brief", pre_meeting_brief),
         ("customer_table_row", customer_table_row),
+        ("customer_table_rows", customer_table_rows),
         ("customer_preserved_fields", preserved_customer_fields),
+        ("customer_preserved_fields_map", customer_preserved_fields_map),
         ("opportunity_snapshot_row", opportunity_snapshot_row),
         ("feishu_bitable_payload", feishu_payload),
     ])
@@ -1466,10 +1687,12 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
     output.mkdir(parents=True, exist_ok=True)
     write_json(output / "meeting_record.json", meeting_record)
     write_json(output / "customer_profile_update.json", customer_profile_update)
+    write_json(output / "customer_profile_updates.json", customer_profile_updates)
     write_json(output / "opportunity_update.json", opportunity_update)
     write_json(output / "follow_up_task.json", follow_up_task)
     write_json(output / "pre_meeting_brief.json", pre_meeting_brief)
     write_json(output / "customer_table_row.json", customer_table_row)
+    write_json(output / "customer_table_rows.json", customer_table_rows)
     write_json(output / "opportunity_snapshot_row.json", opportunity_snapshot_row)
     write_json(output / "crm_packet.json", crm_packet)
     return crm_packet
@@ -1557,12 +1780,14 @@ def validate_datetime(value: Any, field_name: str) -> None:
 
 def validate_model_output(model_output_path: str | Path) -> dict[str, Any]:
     model = read_json(model_output_path)
-    for top in ["meeting", "customer_profile_update", "opportunity_update", "follow_up_task", "pre_meeting_brief"]:
+    customer_profile_scope = "customer_profile_updates" if "customer_profile_updates" in model else "customer_profile_update"
+    for top in ["meeting", customer_profile_scope, "opportunity_update", "follow_up_task", "pre_meeting_brief"]:
         assert_has_property(model, top, "root")
     for field in ["customer_id", "customer_name", "company_name", "meeting_time", "summary"]:
         assert_has_property(model["meeting"], field, "meeting")
+    primary_profile = (model.get("customer_profile_updates") or [model.get("customer_profile_update")])[0]
     for field in ["customer_id", "company_name", "industry", "mbti", "single_status", "resistance_level", "price_sensitivity", "profile_summary"]:
-        assert_has_property(model["customer_profile_update"], field, "customer_profile_update")
+        assert_has_property(primary_profile, field, customer_profile_scope)
     for field in ["opportunity_id", "opportunity_name", "opportunity_description", "sales_region", "business_value", "lead_score", "intent_level", "opportunity_stage", "high_value_flag", "recommended_action", "latest_progress"]:
         assert_has_property(model["opportunity_update"], field, "opportunity_update")
     for field in ["task_title", "owner", "channel", "draft_message", "checklist"]:
@@ -1593,33 +1818,46 @@ def convert_model_output_to_crm(model_output_path: str | Path, output_dir: str |
     source_channel = get_object_value(context, "channel", "LLM 结构化输出")
     owner = get_object_value(context, "owner", model["follow_up_task"]["owner"])
     existing_customer_fields = get_object_value(context, "existing_customer_fields", {}) or {}
-    customer_table_row = OrderedDict([
-        ("客户ID", model["customer_profile_update"]["customer_id"]),
-        ("客户名称", model["meeting"]["customer_name"]),
-        ("客户公司", model["customer_profile_update"]["company_name"]),
-        ("行业", model["customer_profile_update"]["industry"]),
-        ("MBTI", get_object_value(model["customer_profile_update"], "mbti", "未明确")),
-        ("是否单身", get_object_value(model["customer_profile_update"], "single_status", "未明确")),
-        ("沟通风格", join_values(model["customer_profile_update"].get("communication_style"))),
-        ("成交阻力", get_object_value(model["customer_profile_update"], "resistance_level", "未明确")),
-        ("价格敏感程度", get_object_value(model["customer_profile_update"], "price_sensitivity", "未明确")),
-        ("风险顾虑", join_values(model["customer_profile_update"].get("risk_concerns"))),
-        ("客户画像摘要", model["customer_profile_update"]["profile_summary"]),
-        ("客户负责人", owner),
-        ("最后更新时间", model["meeting"]["meeting_time"]),
-        ("数据来源", source_channel),
-    ])
-    customer_table_row, preserved_customer_fields = merge_row_preserving_existing_values(customer_table_row, existing_customer_fields)
-    customer_table_row["客户画像摘要"] = build_customer_profile_summary(
-        customer_table_row.get("客户名称"),
-        get_object_value(model["opportunity_update"], "opportunity_stage", "当前"),
-        customer_table_row.get("MBTI"),
-        customer_table_row.get("是否单身"),
-        customer_table_row.get("沟通风格"),
-        customer_table_row.get("成交阻力"),
-        customer_table_row.get("价格敏感程度"),
-        customer_table_row.get("风险顾虑"),
-    )
+    profile_updates = model.get("customer_profile_updates") or [model["customer_profile_update"]]
+    customer_table_rows: list[OrderedDict[str, Any]] = []
+    customer_preserved_fields_map: OrderedDict[str, list[str]] = OrderedDict()
+    for profile in profile_updates:
+        customer_name = get_object_value(profile, "customer_name", model["meeting"]["customer_name"])
+        company_name = get_object_value(profile, "company_name", model["meeting"]["company_name"])
+        row_existing_fields = existing_customer_fields
+        if isinstance(existing_customer_fields, dict) and any(isinstance(v, dict) for v in existing_customer_fields.values()):
+            row_existing_fields = existing_customer_fields.get(f"{customer_name}||{company_name or ''}") or existing_customer_fields.get(customer_name) or {}
+        customer_table_row = OrderedDict([
+            ("客户ID", profile["customer_id"]),
+            ("客户名称", customer_name),
+            ("客户公司", company_name),
+            ("行业", profile["industry"]),
+            ("MBTI", get_object_value(profile, "mbti", "未明确")),
+            ("是否单身", get_object_value(profile, "single_status", "未明确")),
+            ("沟通风格", join_values(profile.get("communication_style"))),
+            ("成交阻力", get_object_value(profile, "resistance_level", "未明确")),
+            ("价格敏感程度", get_object_value(profile, "price_sensitivity", "未明确")),
+            ("风险顾虑", join_values(profile.get("risk_concerns"))),
+            ("客户画像摘要", profile["profile_summary"]),
+            ("客户负责人", owner),
+            ("最后更新时间", model["meeting"]["meeting_time"]),
+            ("数据来源", source_channel),
+        ])
+        customer_table_row, preserved_customer_fields = merge_row_preserving_existing_values(customer_table_row, row_existing_fields)
+        customer_table_row["客户画像摘要"] = build_customer_profile_summary(
+            customer_table_row.get("客户名称"),
+            get_object_value(model["opportunity_update"], "opportunity_stage", "当前"),
+            customer_table_row.get("MBTI"),
+            customer_table_row.get("是否单身"),
+            customer_table_row.get("沟通风格"),
+            customer_table_row.get("成交阻力"),
+            customer_table_row.get("价格敏感程度"),
+            customer_table_row.get("风险顾虑"),
+        )
+        customer_table_rows.append(customer_table_row)
+        customer_preserved_fields_map[f"{customer_name}||{company_name or ''}"] = preserved_customer_fields
+    customer_table_row = customer_table_rows[0] if customer_table_rows else OrderedDict()
+    preserved_customer_fields = next(iter(customer_preserved_fields_map.values()), []) if customer_preserved_fields_map else []
     opportunity_snapshot_row = OrderedDict([
         ("商机ID", model["opportunity_update"]["opportunity_id"]),
         ("客户ID", model["meeting"]["customer_id"]),
@@ -1640,27 +1878,34 @@ def convert_model_output_to_crm(model_output_path: str | Path, output_dir: str |
         ("商机负责人", owner),
         ("数据来源", source_channel),
     ])
+    primary_profile = profile_updates[0]
     crm_packet = OrderedDict([
         ("input", OrderedDict([("model_output_path", resolve_str(model_output_path)), ("context_path", resolve_str(context_path) if context_path and Path(context_path).exists() else None)])),
         ("meeting", model["meeting"]),
-        ("customer_profile_update", model["customer_profile_update"]),
+        ("customer_profile_update", primary_profile),
+        ("customer_profile_updates", profile_updates),
         ("opportunity_update", model["opportunity_update"]),
         ("follow_up_task", model["follow_up_task"]),
         ("pre_meeting_brief", model["pre_meeting_brief"]),
         ("customer_table_row", customer_table_row),
+        ("customer_table_rows", customer_table_rows),
         ("customer_preserved_fields", preserved_customer_fields),
+        ("customer_preserved_fields_map", customer_preserved_fields_map),
         ("opportunity_snapshot_row", opportunity_snapshot_row),
         (
             "feishu_bitable_payload",
             OrderedDict([
                 (
                     "customer_table",
-                    OrderedDict([
-                        ("mode", "upsert"),
-                        ("key_field", "客户ID"),
-                        ("key", model["customer_profile_update"]["customer_id"]),
-                        ("update_fields", customer_table_row),
-                    ]),
+                    [
+                        OrderedDict([
+                            ("mode", "upsert"),
+                            ("key_field", "客户名称+客户公司"),
+                            ("key", f"{row.get('客户名称', '')}||{row.get('客户公司', '')}"),
+                            ("update_fields", row),
+                        ])
+                        for row in customer_table_rows
+                    ],
                 ),
                 (
                     "opportunity_snapshot_table",
@@ -1675,11 +1920,13 @@ def convert_model_output_to_crm(model_output_path: str | Path, output_dir: str |
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     write_json(output / "meeting_record.json", model["meeting"])
-    write_json(output / "customer_profile_update.json", model["customer_profile_update"])
+    write_json(output / "customer_profile_update.json", primary_profile)
+    write_json(output / "customer_profile_updates.json", profile_updates)
     write_json(output / "opportunity_update.json", model["opportunity_update"])
     write_json(output / "follow_up_task.json", model["follow_up_task"])
     write_json(output / "pre_meeting_brief.json", model["pre_meeting_brief"])
     write_json(output / "customer_table_row.json", customer_table_row)
+    write_json(output / "customer_table_rows.json", customer_table_rows)
     write_json(output / "opportunity_snapshot_row.json", opportunity_snapshot_row)
     write_json(output / "crm_packet.json", crm_packet)
     return crm_packet
