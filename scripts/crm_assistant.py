@@ -339,6 +339,10 @@ def clean_opportunity_theme(raw_title: str, company_name: Any = None, customer_n
                 title = re.sub(r"^[：:·\-—_]+|[：:·\-—_]+$", "", title)
                 changed = True
                 break
+    # Keep identity at product/opportunity level. Words like “项目” are often
+    # added by later-stage meeting titles but should not split the same sales
+    # opportunity into a new opportunity_id.
+    title = re.sub(r"(定制)?项目$", "定制", title)
     return title.strip()
 
 
