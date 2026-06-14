@@ -1051,9 +1051,24 @@ def is_weak_field_value(value: Any) -> bool:
         normalized = text.lower()
         if normalized in {"null", "none", "n/a", "na"}:
             return True
-        if text in {"未明确", "暂无", "未知", "待确认", "待补充"}:
+        weak_text_values = {
+            "未明确",
+            "暂无",
+            "未知",
+            "待确认",
+            "待补充",
+            "空",
+            "空值",
+            "无",
+            "不详",
+            "不明确",
+            "无法判断",
+            "未提及",
+            "未说明",
+        }
+        if text in weak_text_values:
             return True
-        if text.startswith("暂无明确"):
+        if text.startswith(("暂无明确", "未明确", "待确认")):
             return True
         return False
     if isinstance(value, (list, tuple, set, dict)):
@@ -2434,6 +2449,49 @@ def run_feishu_pipeline_tests(output_root: str | Path) -> None:
         raise RuntimeError(f"{failures} Feishu pipeline test(s) failed.")
 
 
+def run_merge_policy_tests() -> None:
+    existing_fields = {
+        "客户名称": "李昊",
+        "是否单身": "是",
+        "MBTI": "ESTJ",
+        "职务": "运营管理部项目经理",
+        "价格敏感程度": "中",
+        "沟通风格": "偏好微信触达；偏好邮件接收",
+        "风险顾虑": "价格敏感；合规与数据安全",
+    }
+    current_row = OrderedDict([
+        ("客户名称", "李昊"),
+        ("是否单身", "未明确"),
+        ("MBTI", "未明确"),
+        ("职务", "运营管理部高级项目经理"),
+        ("价格敏感程度", "未明确"),
+        ("沟通风格", "偏好先看材料；偏好邮件接收"),
+        ("风险顾虑", "交付风险；合规与数据安全"),
+    ])
+    merged, preserved_fields = merge_row_preserving_existing_values(current_row, existing_fields)
+    expected = {
+        "是否单身": "是",
+        "MBTI": "ESTJ",
+        "职务": "运营管理部高级项目经理",
+        "价格敏感程度": "中",
+        "沟通风格": "偏好微信触达；偏好邮件接收；偏好先看材料",
+        "风险顾虑": "价格敏感；合规与数据安全；交付风险",
+    }
+    errors: list[str] = []
+    for field_name, expected_value in expected.items():
+        actual_value = merged.get(field_name)
+        if actual_value != expected_value:
+            errors.append(f"{field_name} expected [{expected_value}] actual [{actual_value}]")
+    for field_name in ["是否单身", "MBTI", "价格敏感程度"]:
+        if field_name not in preserved_fields:
+            errors.append(f"{field_name} should be marked as preserved")
+    if errors:
+        for error_item in errors:
+            print(f"[FAIL] {error_item}")
+        raise RuntimeError(f"{len(errors)} merge policy assertion(s) failed.")
+    print("[PASS] merge policy preserves explicit customer fields and accepts explicit updates")
+
+
 def run_model_output_tests(output_root: str | Path) -> None:
     model_dir = skill_root() / "runtime" / "llm_outputs"
     sample_dir = skill_root() / "assets" / "samples"
@@ -2609,6 +2667,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("run-model-output-tests")
     p.add_argument("--output-root", default=str(skill_root() / "runtime" / "from_model_py"))
 
+    sub.add_parser("run-merge-policy-tests")
+
     p = sub.add_parser("run-customer-journey")
     p.add_argument("--manifest-path", required=True)
     p.add_argument("--output-dir", required=True)
@@ -2712,6 +2772,9 @@ def main() -> None:
     elif args.command == "run-model-output-tests":
         run_model_output_tests(args.output_root)
         print(f"All model output tests passed. Output root: {args.output_root}")
+    elif args.command == "run-merge-policy-tests":
+        run_merge_policy_tests()
+        print("All merge policy tests passed.")
     elif args.command == "run-customer-journey":
         run_customer_journey(args.manifest_path, args.output_dir)
         print(f"Customer journey generated at: {args.output_dir}")
