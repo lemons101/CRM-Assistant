@@ -1013,6 +1013,19 @@ def coerce_row_for_bitable(row: dict[str, Any], fields_meta: list[dict[str, Any]
     return coerced
 
 
+def normalize_existing_bitable_fields(fields: dict[str, Any], fields_meta: list[dict[str, Any]]) -> OrderedDict[str, Any]:
+    fields_by_name = {str(item.get("field_name") or "").strip(): item for item in fields_meta or []}
+    normalized = OrderedDict()
+    for field_name, value in (fields or {}).items():
+        field_meta = fields_by_name.get(str(field_name).strip())
+        field_type = int(get_object_value(field_meta, "type", 0) or 0) if field_meta else 0
+        if field_type in {1, 3, 4, 15}:
+            normalized[field_name] = normalize_feishu_field_value(value)
+        else:
+            normalized[field_name] = value
+    return normalized
+
+
 def is_weak_field_value(value: Any) -> bool:
     if value is None:
         return True
@@ -1275,7 +1288,8 @@ def sync_crm_packet_to_feishu(
                 effective_customer_rows.append(coerced_row)
                 customer_preserved_fields_map[f"{row_name}||{row_company or ''}"] = []
             else:
-                effective_customer_row, preserved_fields = merge_row_preserving_existing_values(row, existing_record.get("fields") or {})
+                existing_record_fields = normalize_existing_bitable_fields(existing_record.get("fields") or {}, customer_fields_meta)
+                effective_customer_row, preserved_fields = merge_row_preserving_existing_values(row, existing_record_fields)
                 effective_customer_row["客户画像摘要"] = build_customer_profile_summary(
                     effective_customer_row.get("客户名称"),
                     opportunity_row.get("当前阶段"),
