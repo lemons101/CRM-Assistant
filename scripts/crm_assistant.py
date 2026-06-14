@@ -1705,7 +1705,29 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         f"我会先通过{channel}发您精简版材料，您看完后我们再按约定时间推进。"
     )
     brief_trigger = next_meeting_time - timedelta(hours=1) if next_meeting_time is not None else None
-    opening_script = f"先确认{join_values(need_summaries[:2], '当前核心需求')}，再回应{join_values(concern_summaries[:2], '当前关键风险')}，最后推进{join_values(next_step_summaries[:2], recommended_action)}。"
+    opening_focus_items = need_summaries[:2]
+    opening_concern_items = concern_summaries[:2]
+    opening_next_items = next_step_summaries[:2]
+
+    if opening_focus_items:
+        opening_focus_text = "、".join(opening_focus_items)
+        opening_focus_sentence = f"这次先围绕{opening_focus_text}来对齐。"
+    else:
+        opening_focus_sentence = "这次先围绕当前核心需求来对齐。"
+
+    if opening_concern_items:
+        opening_concern_text = "、".join(opening_concern_items)
+        opening_concern_sentence = f"重点回应{opening_concern_text}。"
+    else:
+        opening_concern_sentence = "重点回应当前推进中的关键顾虑。"
+
+    if opening_next_items:
+        opening_next_text = "，再".join([opening_next_items[0], *opening_next_items[1:]])
+        opening_next_sentence = f"会后先{opening_next_text}。"
+    else:
+        opening_next_sentence = f"会后按{recommended_action}继续推进。"
+
+    opening_script = f"{opening_focus_sentence}{opening_concern_sentence}{opening_next_sentence}"
 
     opportunity_update = OrderedDict([
         ("opportunity_id", get_object_value(context, "opportunity_id")),
