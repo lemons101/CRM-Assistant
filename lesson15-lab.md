@@ -80,7 +80,6 @@ https://github.com/lemons101/CRM-Assistant
 1. 项目实际安装目录
 2. 当前最新 commit
 3. CLI 是否可用
-4. assets/meeting_docs 下有哪些 Word 测试文档
 ```
 
 ---
