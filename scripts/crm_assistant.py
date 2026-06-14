@@ -1352,6 +1352,131 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         match = re.match(r"^([^：:]+)[：:](.*)$", line)
         return match.group(2).strip() if match else str(line).strip()
 
+    def clean_text_value(text: Any) -> str:
+        return re.sub(r"\s+", " ", str(text or "")).strip(" ；;，,。\n\t")
+
+    def dedupe_texts(values: list[Any]) -> list[str]:
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            cleaned = clean_text_value(value)
+            if not cleaned or cleaned in seen:
+                continue
+            seen.add(cleaned)
+            result.append(cleaned)
+        return result
+
+    def shorten_content(text: str, max_len: int = 34) -> str:
+        cleaned = clean_text_value(text)
+        return cleaned if len(cleaned) <= max_len else f"{cleaned[:max_len].rstrip()}…"
+
+    def summarize_line(line: str, max_len: int = 28) -> str:
+        speaker = line_speaker(line)
+        content = shorten_content(line_content(line), max_len=max_len)
+        if speaker and content:
+            return f"{speaker}：{content}"
+        return content or clean_text_value(line)
+
+    def summarize_lines(lines_list: list[str], max_items: int = 3, max_len: int = 28) -> list[str]:
+        return dedupe_texts([summarize_line(item, max_len=max_len) for item in lines_list[:max_items]])
+
+    def detect_budget_phrase(text: str) -> str | None:
+        patterns = [
+            r"([0-9一二三四五六七八九十百千万\.]+\s*[万Ww])\s*以内",
+            r"控制在\s*([0-9一二三四五六七八九十百千万\.]+\s*[万Ww])\s*以内",
+            r"([0-9一二三四五六七八九十百千万\.]+\s*[万Ww])\s*以上",
+            r"([0-9一二三四五六七八九十百千万\.]+\s*[万Ww])\s*[到至-]\s*([0-9一二三四五六七八九十百千万\.]+\s*[万Ww])",
+            r"预算[^。；;，,]{0,20}?([0-9一二三四五六七八九十百千万\.]+\s*[万Ww])",
+        ]
+        cleaned = clean_text_value(text)
+        for pattern in patterns:
+            match = re.search(pattern, cleaned)
+            if not match:
+                continue
+            groups = [clean_text_value(g) for g in match.groups() if g]
+            if "以内" in match.group(0):
+                return f"预算控制在{groups[0]}以内"
+            if "以上" in match.group(0):
+                return f"预算下限约{groups[0]}"
+            if len(groups) >= 2:
+                return f"预算区间约{groups[0]}-{groups[1]}"
+            if groups:
+                return f"预算参考值约{groups[0]}"
+        return None
+
+    def build_need_summary(lines_list: list[str], business_value: str | None = None) -> list[str]:
+        summaries: list[str] = []
+        joined = " ".join(lines_list)
+        if re.search("问题单|流转|闭环|周报|回访", joined):
+            summaries.append("先梳理问题单流转、回访、周报与异常闭环流程")
+        if re.search("角色|权限|谁能看|谁能改|谁能导出|数据隔离", joined):
+            summaries.append("明确服务站、区域、总部与质控的角色权限边界")
+        if re.search("一页纸|简版|不要十几页|核心流程节点|权限表", joined):
+            summaries.append("先提供一页纸结论、权限表和核心流程节点")
+        if re.search("录入太复杂|培训周期|三步以内|现场处理节奏", joined):
+            summaries.append("一线录入尽量轻量，避免影响现场处理节奏")
+        budget_summary = detect_budget_phrase(joined)
+        if budget_summary is not None:
+            summaries.append(budget_summary)
+        elif business_value:
+            summaries.append(f"预算口径先按{business_value}控制")
+        return dedupe_texts(summaries)[:4]
+
+    def build_concern_summary(concern_lines_list: list[str], risk_labels: list[str]) -> list[str]:
+        summaries: list[str] = []
+        for label in risk_labels:
+            mapping = {
+                "价格敏感": "客户对一期投入与范围控制较敏感",
+                "交付风险": "客户担心交付复杂度和上线推进风险",
+                "合规与数据安全": "客户重点关注权限、数据隔离与合规边界",
+                "效果不确定": "客户希望先验证阶段价值，避免一次性铺太大",
+                "时间窗口紧张": "客户希望尽快推进并收敛下一轮决策时间",
+            }
+            if label in mapping:
+                summaries.append(mapping[label])
+        if not summaries and concern_lines_list:
+            summaries.extend(summarize_lines(concern_lines_list, max_items=2, max_len=24))
+        return dedupe_texts(summaries)[:3]
+
+    def build_next_step_summary(next_lines: list[str], stage: str) -> list[str]:
+        joined = " ".join(next_lines)
+        summaries: list[str] = []
+        if re.search("一页纸|简版|权限表|核心流程节点", joined):
+            summaries.append("先发一页纸结论、角色权限表和核心流程节点")
+        if re.search("邮箱|邮件", joined):
+            summaries.append("正式说明材料通过邮件发送，简版可先用即时消息同步")
+        if re.search("下周三|内部会|再拉一轮", joined):
+            summaries.append("下周三前完成需求边界收敛并准备内部会")
+        if re.search("报价|正式报价", joined):
+            summaries.append("在边界和优先级明确前暂不推进正式报价")
+        default_map = {
+            "已成交": "转入启动会、交付排期和验收准备",
+            "待成交": "锁定合同、付款节点和签约排期",
+            "推进中": "继续跟进关键角色并收敛实施边界",
+            "方案沟通": "补齐方案与报价材料并确认下轮沟通",
+            "需求确认": "补齐需求边界并推动进入方案沟通",
+            "初次接触": "先发简版总结并继续培育意向",
+        }
+        if not summaries:
+            summaries.append(default_map[stage])
+        return dedupe_texts(summaries)[:3]
+
+    def build_recommended_action(contact_names: list[str], next_step_summaries: list[str], stage: str) -> str:
+        target = "、".join(contact_names) if contact_names else "客户"
+        if next_step_summaries:
+            if len(contact_names) > 1:
+                return f"向{target}同步会议结论，并{join_values(next_step_summaries[:2], '按约定推进下一步')}"
+            return f"向{target}同步会议结论，并{join_values(next_step_summaries[:2], '按约定推进下一步')}"
+        default_map = {
+            "已成交": "切换到交付执行节奏，确认启动会、责任分工与阶段验收安排",
+            "待成交": "推动最终确认并准备签约/付款材料",
+            "推进中": "整理推进清单，锁定关键角色并跟进采购/法务节点",
+            "方案沟通": "24小时内发送定制方案/报价并确认下一次沟通",
+            "需求确认": "补齐关键需求信息并推动进入方案讨论",
+            "初次接触": "发送简洁会后摘要并继续培育客户意向",
+        }
+        return default_map[stage]
+
     customer_lines = [line for line in lines if line_speaker(line) in external_names]
     if not customer_lines:
         customer_lines = [line for line in lines if re.search(r"^(客户|张总|陈女士|刘总|孙总|客户A|客户B|客户C|客户D)[:：]", line)]
@@ -1381,7 +1506,7 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
     decision_signal_map = OrderedDict([
         ("本人为关键决策人", "我本人会盯|我来拍板|我定|我决定|先跟我沟通"),
         ("家庭共同决策", "我先生|我太太|先生会一起看|太太也会看"),
-        ("企业多角色决策", "CFO|CTO|采购|法务|财务总监|运营负责人|董事会|合伙人"),
+        ("企业多角色决策", "CFO|CTO|采购|法务|财务总监|运营负责人|董事会|合伙人|信息科技|质控负责人"),
         ("明确预算", "预算|金额超过"),
         ("明确时间表", "下周|本周|本月|月底|季度内|明天|周五之前|六月底前|下周一|下周三|下周四"),
     ])
@@ -1439,48 +1564,25 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         fallback_name = str(get_object_value(context, "customer_name") or "客户").strip() or "客户"
         contact_lines_map[fallback_name] = customer_lines[:]
 
-    role_hints = [
-        "负责人", "采购", "法务", "财务", "运营", "技术", "产品", "老板", "总监", "经理", "主管", "接口人", "决策", "审批", "使用方",
-    ]
-
-    def infer_contact_role_notes(contact_name: str, contact_lines: list[str]) -> list[str]:
-        notes: list[str] = []
-        scoped_text = " ".join(contact_lines)
-        for hint in role_hints:
-            if re.search(hint, scoped_text) and hint not in notes:
-                notes.append(hint)
-        return notes
-
     aggregated_contact_names = "、".join(external_names) if external_names else str(get_object_value(context, "customer_name") or "客户")
-    contact_action_fragments: list[str] = []
-    for contact in external_contacts or [{"name": aggregated_contact_names, "company": company_name, "industry": industry_name}]:
-        contact_name = str(contact.get("name") or "").strip() or aggregated_contact_names
-        scoped_lines = contact_lines_map.get(contact_name, customer_lines)
-        scoped_text = " ".join(scoped_lines)
-        role_notes = infer_contact_role_notes(contact_name, scoped_lines)
-        responsibilities = "、".join(role_notes[:2]) if role_notes else "对应职责"
-        direct_next = get_matched_lines(scoped_lines + next_action_lines, ["发我", "发邮件", "邮箱", "报价", "方案", "演示", "安排", "见面", "试点", "下周", "明天", "周[一二三四五]"])
-        next_step = join_values(direct_next[:2], "按约定推进下一步")
-        contact_action_fragments.append(f"向{contact_name}同步{responsibilities}相关材料，并{next_step}")
-    stage_default_action = {
-        "已成交": "切换到交付执行节奏，确认启动会、责任分工与阶段验收安排",
-        "待成交": "推动最终确认并准备签约/付款材料",
-        "推进中": "整理推进清单，锁定关键角色并跟进采购/法务节点",
-        "方案沟通": "24小时内发送定制方案/报价并确认下一次沟通",
-        "需求确认": "补齐关键需求信息并推动进入方案讨论",
-        "初次接触": "发送简洁会后摘要并继续培育客户意向",
-    }[opportunity_stage]
-    recommended_action = "；".join(contact_action_fragments[:3]) if contact_action_fragments else stage_default_action
-    if not recommended_action.strip():
-        recommended_action = stage_default_action
+    need_summaries = build_need_summary(need_lines, business_value=business_value)
+    concern_summaries = build_concern_summary(concern_lines, risk_concerns)
+    next_step_summaries = build_next_step_summary(next_action_lines, opportunity_stage)
+    recommended_action = build_recommended_action(external_names, next_step_summaries, opportunity_stage)
     channel = "邮件" if "偏好邮件接收" in communication_style else ("微信" if "偏好微信触达" in communication_style else "飞书消息")
 
-    summary = f"{aggregated_contact_names}本次重点关注{join_values(need_lines, '当前需求待补充')}；主要顾虑为{join_values(concern_lines, '当前未明确提出强顾虑')}；建议下一步{join_values(next_action_lines, recommended_action)}。"
+    summary_parts = [
+        f"{aggregated_contact_names}本次会议已完成需求梳理",
+        f"当前重点是{join_values(need_summaries[:2], '补充关键需求信息')}",
+        f"主要顾虑包括{join_values(concern_summaries[:2], '暂无明显新增顾虑')}",
+        f"下一步建议{join_values(next_step_summaries[:2], recommended_action)}",
+    ]
+    summary = "；".join(summary_parts) + "。"
     mbti = infer_mbti(all_text)
     single_status = infer_single_status(customer_text)
     resistance_level = infer_resistance_level(opportunity_stage, risk_concerns, customer_text)
     price_sensitivity = infer_price_sensitivity(customer_text, risk_concerns, budget_max)
-    latest_progress = f"本次会议后，客户处于{opportunity_stage}阶段，Lead Score {lead_score}，推荐动作：{recommended_action}"
+    latest_progress = f"本次会议后，客户处于{opportunity_stage}阶段，Lead Score {lead_score}。当前建议：{join_values(next_step_summaries[:2], recommended_action)}。"
 
     opportunity_theme = infer_opportunity_theme(
         get_object_value(context, "source_title"),
@@ -1498,15 +1600,11 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         "初次接触": "客户当前仍处于接触或观察阶段，适合继续培育与补充需求理解。",
     }[opportunity_stage]
 
-    discussion_points: list[str] = []
-    for item in need_lines + concern_lines:
-        if item not in discussion_points:
-            discussion_points.append(item)
-    key_points: list[str] = []
-    for item in need_lines + next_action_lines:
-        if item not in key_points:
-            key_points.append(item)
-    commitments = next_action_lines[:3]
+    discussion_points = need_summaries[:]
+    if business_value and not any(business_value in item for item in discussion_points):
+        discussion_points.append(f"预算口径：{business_value}")
+    key_points = dedupe_texts(need_summaries[:2] + next_step_summaries[:2])
+    commitments = next_step_summaries[:3]
     meeting_id_suffix = meeting_time.strftime("%Y%m%d%H%M") if meeting_time else "unknown"
     meeting_customer_id = get_object_value(context, "customer_id") or "multi"
 
@@ -1600,14 +1698,14 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         customer_preserved_fields_map[f"{contact_name}||{contact_company or ''}"] = preserved_customer_fields
 
     draft_message = (
-        f"{aggregated_contact_names} 您好，今天沟通的重点我帮您收了一版：\n"
-        f"1. 您当前最关注的是：{join_values(need_lines, '核心需求已记录')}。\n"
-        f"2. 我们会重点处理：{join_values(concern_lines, '本次暂无突出顾虑')}。\n"
-        f"3. 下一步我会：{recommended_action}。\n"
-        f"如果方便，我先通过{channel}发您精简版材料，您看完后我们再按约定时间推进。"
+        f"{aggregated_contact_names} 您好，今天沟通内容我先帮您收个简版：\n"
+        f"1. 当前重点：{join_values(need_summaries[:2], '核心需求已记录')}。\n"
+        f"2. 重点关注：{join_values(concern_summaries[:2], '本次暂无突出顾虑')}。\n"
+        f"3. 下一步安排：{join_values(next_step_summaries[:2], recommended_action)}。\n"
+        f"我会先通过{channel}发您精简版材料，您看完后我们再按约定时间推进。"
     )
     brief_trigger = next_meeting_time - timedelta(hours=1) if next_meeting_time is not None else None
-    opening_script = f"先从客户最在意的{join_values(need_lines, '当前需求')}切入，再回应{join_values(risk_concerns, '执行细节')}，最后确认{join_values(next_action_lines, recommended_action)}。"
+    opening_script = f"先确认{join_values(need_summaries[:2], '当前核心需求')}，再回应{join_values(concern_summaries[:2], '当前关键风险')}，最后推进{join_values(next_step_summaries[:2], recommended_action)}。"
 
     opportunity_update = OrderedDict([
         ("opportunity_id", get_object_value(context, "opportunity_id")),
@@ -1637,7 +1735,7 @@ def process_transcript(transcript_path: str | Path, context_path: str | Path, ou
         ("headline", f"{aggregated_contact_names} 会前行动简报"),
         ("opening_script", opening_script),
         ("key_points", key_points),
-        ("watchouts", list(OrderedDict.fromkeys(concern_lines))),
+        ("watchouts", concern_summaries[:]),
         ("materials_to_prepare", ["客户画像摘要", "上次会议结论", "与本次需求对应的方案/案例/报价材料"]),
     ])
     opportunity_snapshot_row = OrderedDict([
