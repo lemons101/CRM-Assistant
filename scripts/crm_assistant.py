@@ -694,7 +694,20 @@ def build_context_from_feishu_doc(doc_markdown_path: str | Path, output_dir: str
     return result
 
 
-def ingest_feishu_doc_to_bitable(doc_markdown_path: str | Path, output_dir: str | Path, source_doc_url: str | None = None, fallback_title: str | None = None) -> dict[str, Any]:
+def ingest_feishu_doc_to_bitable(
+    doc_markdown_path: str | Path,
+    output_dir: str | Path,
+    source_doc_url: str | None = None,
+    fallback_title: str | None = None,
+    config_path: str | Path | None = None,
+    app_id: str | None = None,
+    app_secret: str | None = None,
+    app_token_or_url: str | None = None,
+    customer_table_id: str | None = None,
+    opportunity_table_id: str | None = None,
+    dry_run: bool = False,
+    sync_feishu: bool = False,
+) -> dict[str, Any]:
     output = Path(output_dir)
     build_output = output / "build"
     process_output = output / "process"
@@ -709,6 +722,22 @@ def ingest_feishu_doc_to_bitable(doc_markdown_path: str | Path, output_dir: str 
         ("customer_id", crm_packet["customer_table_row"].get("客户ID")),
         ("opportunity_id", crm_packet["opportunity_snapshot_row"].get("商机ID")),
     ])
+    if sync_feishu:
+        sync_output = output / "sync"
+        sync_result = sync_crm_packet_to_feishu(
+            process_output / "crm_packet.json",
+            sync_output,
+            config_path,
+            app_id,
+            app_secret,
+            app_token_or_url,
+            customer_table_id,
+            opportunity_table_id,
+            dry_run,
+        )
+        result["sync_result_path"] = resolve_str(sync_output / "feishu_sync_result.json")
+        result["customer_action"] = sync_result.get("customer_action")
+        result["opportunity_action"] = sync_result.get("opportunity_action")
     write_json(output / "ingest_doc_result.json", result)
     return result
 
@@ -2507,6 +2536,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output-dir", required=True)
     p.add_argument("--source-doc-url")
     p.add_argument("--fallback-title")
+    p.add_argument("--config-path")
+    p.add_argument("--app-id")
+    p.add_argument("--app-secret")
+    p.add_argument("--app-token-or-url")
+    p.add_argument("--customer-table-id")
+    p.add_argument("--opportunity-table-id")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--sync-feishu", action="store_true")
     return parser
 
 
@@ -2585,6 +2622,14 @@ def main() -> None:
             args.output_dir,
             args.source_doc_url,
             args.fallback_title,
+            args.config_path,
+            args.app_id,
+            args.app_secret,
+            args.app_token_or_url,
+            args.customer_table_id,
+            args.opportunity_table_id,
+            args.dry_run,
+            args.sync_feishu,
         )
         print(f"Feishu doc input fully converted at: {args.output_dir}")
 
